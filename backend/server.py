@@ -452,80 +452,82 @@ Garde l'explication existante et ajoute tes enrichissements de manière fluide.
     return base_explanation
 
 def generate_smart_fallback_explanation(verse_text: str, book: str, chap: int, vnum: int) -> str:
-    """Génère une explication enrichie intelligente sans LLM."""
+    """Génère une explication ULTRA-ENRICHIE intelligente sans LLM."""
     
     low = verse_text.lower()
     explanations = []
     
-    # Contexte par livre
-    book_contexts = {
-        "Genèse": "Ce passage des origines révèle les fondements du plan divin pour l'humanité et la création.",
-        "Exode": "Cette section de l'Exode illustre l'œuvre libératrice de Dieu et ses implications pour l'alliance.",
-        "Lévitique": "Ces prescriptions lévitiques établissent la sainteté requise pour l'approche de Dieu.",
-        "Nombres": "Ce récit du pèlerinage au désert enseigne la fidélité et les conséquences de l'incrédulité.",
-        "Deutéronome": "Ces paroles de Moïse rappellent l'alliance et appellent à l'obéissance.",
-        "Matthieu": "Cet enseignement de Jésus révèle le Royaume des cieux et ses exigences.",
-        "Marc": "Cette action de Jésus manifeste sa divinité et son pouvoir sur la création.",
-        "Luc": "Ce récit lucanien souligne la miséricorde divine pour tous les peuples.",
-        "Jean": "Cette déclaration johannique révèle la divinité du Christ et la vie éternelle.",
-        "Actes": "Ce témoignage apostolique montre l'expansion de l'Évangile par l'Esprit.",
-        "Romains": "Cette exposition paulinienne développe la doctrine de la justification par la foi.",
-        "Psaumes": "Ce psaume exprime l'authentique spiritualité dans la relation avec Dieu.",
+    # I. ANALYSE TEXTUELLE APPROFONDIE
+    explanations.append(f"**ANALYSE TEXTUELLE DE {book} {chap}:{vnum}**")
+    
+    # Contexte littéraire spécialisé par livre
+    advanced_contexts = {
+        "Genèse": f"Dans le récit primordial de la création (Ma'aseh Bereshit), ce verset {vnum} révèle l'ordre cosmogonique divin et établit les fondements ontologiques de la réalité. La structure hébraïque du texte massorétique déploie une théologie de la transcendance créatrice.",
+        "Exode": f"Ce passage du récit de l'Exode (Sefer Shemot) s'inscrit dans la théologie de la libération sotériologique. Le verset {vnum} articule la dialectique entre l'oppression pharaonique et la rédemption yahviste, préfigurant l'œuvre messianique.",
+        "Psaumes": f"Cette expression du psautier davidique (Tehillim) constitue une théophanie poétique révélant l'intimité de l'alliance. Le verset {vnum} exprime la spiritualité hébraïque authentique dans sa relation covenantale avec YHWH.",
+        "Jean": f"Dans le quatrième évangile johannique, ce logion du verset {vnum} déploie la christologie haute et révèle l'économie trinitaire. La théologie johannique articule l'incarnation du Logos et la sotériologie pneumatique.",
+        "Romains": f"Cette péricope de l'épître paulinienne développe la théologie de la justification (dikaiôsis). Le verset {vnum} explicite la doctrine de la grâce souveraine et l'imputation de la justice christique."
     }
     
-    explanations.append(book_contexts.get(book, f"Ce verset de {book} révèle un aspect important de la révélation divine."))
+    explanations.append(advanced_contexts.get(book, f"Ce texte de {book} s'inscrit dans l'économie révélationnelle progressive et manifeste l'herméneutique christocentrique de l'Écriture."))
     
-    # Analyse thématique
-    if any(word in low for word in ["créa", "commencement", "dieu créa"]):
-        explanations.append("La création ex nihilo affirme la souveraineté absolue de Dieu et fonde toute théologie de la providence. Elohim (pluriel de majesté) laisse entrevoir le mystère trinitaire.")
+    # II. ANALYSE LEXICALE ET GRAMMATICALE AVANCÉE
+    explanations.append("**ANALYSE LEXICALE :**")
     
-    if any(word in low for word in ["alliance", "promesse", "serment"]):
-        explanations.append("L'alliance divine révèle la fidélité de Dieu envers son peuple et préfigure la nouvelle alliance en Christ. Elle structure toute l'histoire du salut.")
+    if any(word in low for word in ["créa", "commencement", "dieu créa", "בראשית", "ברא"]):
+        explanations.append("Le terme hébraïque 'bara' (ברא) exprime la création ex nihilo, activité exclusive de la divinité. 'Bereshit' (בראשית) indique l'inauguration absolue du temps cosmique. 'Elohim' (אלהים), pluriel d'intensité, révèle la majesté trinitaire préfigurée dans l'économie créatrice.")
     
-    if any(word in low for word in ["amour", "miséricorde", "grâce"]):
-        explanations.append("L'amour divin (agapè) se manifeste comme don gratuit et inconditionnel, culminant dans le sacrifice du Christ (Jean 3:16, Romains 5:8).")
+    if any(word in low for word in ["lumière", "soit", "dit", "אור", "יהי"]):
+        explanations.append("La formule performative 'yehi or' (יהי אור) constitue le premier fiat divin, révélant l'efficacité de la Parole créatrice (dabar). Cette lumière primordiale (or rishon) précède ontologiquement les luminaires, évoquant la nature métaphysique de la révélation divine.")
     
-    if any(word in low for word in ["péché", "iniquité", "transgression"]):
-        explanations.append("Le péché révèle la rupture entre Dieu et l'homme, nécessitant l'œuvre expiatoire du Christ pour la réconciliation (Romains 3:23-26).")
+    if any(word in low for word in ["image", "ressemblance", "tselem", "demut", "צלם"]):
+        explanations.append("Le concept d'image divine (tselem Elohim - צלם אלהים) et de ressemblance (demut - דמות) établit l'anthropologie biblique. Cette imago Dei comprend la rationalité (mens), la volonté libre (liberum arbitrium) et la capacité relationnelle, corrompue par la chute mais restaurée en Christ, l'image parfaite du Père.")
     
-    if any(word in low for word in ["résurrection", "ressuscité", "mort"]):
-        explanations.append("La résurrection valide la divinité du Christ et garantit notre propre résurrection. Elle est le fondement de l'espérance chrétienne (1 Corinthiens 15).")
+    if any(word in low for word in ["alliance", "berith", "brit", "ברית"]):
+        explanations.append("Le concept d'alliance (berith - ברית) structure l'histoire du salut selon le modèle suzerain-vassal du Proche-Orient ancien. Cette disposition covenantale révèle la fidélité de YHWH (hesed - חסד) et préfigure la nouvelle alliance (berith hadashah) ratifiée par le sang christique.")
     
-    if any(word in low for word in ["foi", "croire", "confiance"]):
-        explanations.append("La foi biblique (pistis) implique confiance, fidélité et obéissance. Elle est le moyen de la justification (Romains 1:17, Hébreux 11:1).")
+    if any(word in low for word in ["amour", "agape", "hesed", "אהבה"]):
+        explanations.append("L'amour divin (ahavah - אהבה) se manifeste comme hesed (חסד - fidélité covenantale) dans l'AT et agapè (ἀγάπη) dans le NT. Cette agapè inconditionnelle culmine dans le sacrifice propitiatoire du Calvaire, révélant la philanthropie divine (Tite 3:4).")
     
-    if any(word in low for word in ["royaume", "roi", "trône"]):
-        explanations.append("Le Royaume révèle la souveraineté divine dans l'histoire et eschatologiquement. Christ règne déjà spirituellement et règnera visiblement (Apocalypse 11:15).")
+    if any(word in low for word in ["foi", "aman", "pistis", "אמן", "πίστις"]):
+        explanations.append("La foi biblique ('emunah - אמונה/pistis - πίστις) implique la confiance fiduciale (fiducia), l'assentiment intellectuel (assensus) et la connaissance salvifique (notitia). Instrument de la justification (sola fide), elle unit le croyant au Christ par l'union mystique.")
     
-    if any(word in low for word in ["esprit", "souffle", "ruach"]):
-        explanations.append("L'Esprit de Dieu (ruach/pneuma) est l'agent de la création, de la révélation et de la régénération. Il applique l'œuvre du Christ aux croyants.")
+    # III. THÉOLOGIE SYSTÉMATIQUE
+    explanations.append("**IMPLICATIONS DOGMATIQUES :**")
     
-    if any(word in low for word in ["parole", "logos", "dit"]):
-        explanations.append("La Parole divine est créatrice (Genèse 1), révélatrice (Hébreux 1:1) et incarnée en Christ (Jean 1:1,14). Elle est efficace et transformatrice.")
+    if book in ["Genèse"]:
+        explanations.append("Ce texte fonde la théologie de la création contre le panthéisme, le dualisme et l'évolutionnisme athée. La creatio ex nihilo affirme la transcendance divine et établit la distinction Créateur-créature, base de toute métaphysique biblique.")
+    elif book in ["Jean"]:
+        explanations.append("Cette péricope articule la christologie chalcédonienne (deux natures, une personne) et la théologie trinitaire. L'incarnation du Logos révèle l'économie immanente de la Trinité et accomplit l'œuvre de réconciliation.")
+    elif book in ["Romains"]:
+        explanations.append("Ce passage développe la sotériologie réformée : dépravation totale, élection inconditionnelle, expiation limitée, grâce irrésistible et persévérance des saints. La justification sola gratia exclut toute coopération synergiste.")
     
-    if any(word in low for word in ["sacrifice", "offrande", "autel"]):
-        explanations.append("Les sacrifices de l'Ancien Testament préfigurent l'unique sacrifice parfait du Christ (Hébreux 9-10). Ils enseignent la gravité du péché et la nécessité de l'expiation.")
+    # IV. PERSPECTIVE HISTORICO-RÉDEMPTRICE
+    explanations.append("**ÉCONOMIE DU SALUT :**")
     
-    # Application christocentrique
-    cristo_applications = {
-        "Genèse": "Cette vérité trouve son accomplissement en Christ, la Parole créatrice incarnée (Jean 1:3, Colossiens 1:16).",
-        "Exode": "Cette libération préfigure la rédemption accomplie par Christ, notre Pâque (1 Corinthiens 5:7).",
-        "Psaumes": "Ce psaume trouve son accomplissement parfait en Christ, le Messie davidique (Actes 2:25-31).",
-        "Ésaïe": "Cette prophétie s'accomplit en Jésus-Christ, le Serviteur souffrant et le Roi glorieux (Matthieu 1:23, Luc 4:21).",
+    cristocentrique_apps = {
+        "Genèse": "Cette vérité créationnelle trouve son accomplissement dans l'œuvre du Logos incarné, agent de la création (Jean 1:3, Col 1:16) et de la nouvelle création (2 Cor 5:17). Christ, dernier Adam, restaure l'image divine déchue.",
+        "Exode": "Cette libération typologique préfigure l'exode spirituel accompli par Christ, notre Pâque (1 Cor 5:7). L'agneau pascal anticipe l'Agneau de Dieu qui ôte le péché du monde (Jean 1:29).",
+        "Psaumes": "Ce psaume messianique trouve son accomplissement en Christ, Fils de David selon la chair (Rom 1:3), qui règne à la droite du Père (Ps 110:1, Héb 1:3).",
+        "Jean": "Cette révélation johannique manifeste l'unité essentielle du Fils avec le Père (homoousios) et la mission sotériologique du Verbe incarné pour le salut du cosmos.",
+        "Romains": "Cette exposition sotériologique révèle l'œuvre substitutionnaire du Christ, qui devient péché pour nous afin que nous devenions justice de Dieu en lui (2 Cor 5:21)."
     }
     
-    if book in cristo_applications:
-        explanations.append(cristo_applications[book])
-    else:
-        explanations.append(f"Ce passage s'éclaire pleinement à la lumière du Christ et de son œuvre rédemptrice.")
+    explanations.append(cristocentrique_apps.get(book, "Ce passage révèle un aspect de l'œuvre rédemptrice du Christ et de son application par l'Esprit Saint dans l'ordo salutis."))
     
-    # Références canoniques génériques par contexte
-    if book in ["Genèse", "Exode", "Lévitique", "Nombres", "Deutéronome"]:
-        explanations.append("Références : Hébreux 11 (la foi des patriarches), Galates 3 (la promesse et la loi), 1 Corinthiens 10 (exemples d'Israël).")
-    elif book in ["Matthieu", "Marc", "Luc", "Jean"]:
-        explanations.append("Parallèles synoptiques à consulter. Voir aussi les épîtres pour l'application doctrinale de cet enseignement du Christ.")
-    elif book in ["Actes"]:
-        explanations.append("Comparer avec les épîtres pauliniennes pour l'enseignement doctrinal correspondant à cette pratique apostolique.")
+    # V. RÉFÉRENCES PATRISTIQUES ET RÉFORMÉES
+    explanations.append("**CONSENSUS PATRUM :**")
+    
+    patristique_refs = {
+        "Genèse": "Augustin (Conf. XI) médite sur l'éternité créatrice de Dieu. Basile de Césarée (Hexaemeron) développe la théologie de la création. Calvin (Inst. I.14) explicite la doctrine de la providence.",
+        "Jean": "Athanase d'Alexandrie défend l'homoousios contre l'arianisme. Jean Chrysostome développe l'exégèse christologique. Luther redécouvre la justification sola fide.",
+        "Romains": "Augustin contre Pélage articule la doctrine de la grâce. Thomas d'Aquin systématise la théologie de la justification. Calvin explicite la prédestination double.",
+    }
+    
+    explanations.append(patristique_refs.get(book, "Les Pères de l'Église et les Réformateurs ont développé l'herméneutique christocentrique de ce passage dans la tradition orthodoxe."))
+    
+    # VI. APPLICATION PASTORALE
+    explanations.append("**IMPLICATIONS PASTORALES :** Cette vérité théologique transforme la vie chrétienne par la sanctification progressive (theosis), nourrit la piété réformée et oriente la mission évangélique ad majorem Dei gloriam.")
     
     return " ".join(explanations)
 

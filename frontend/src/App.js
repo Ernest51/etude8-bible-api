@@ -434,56 +434,77 @@ function App() {
       setIsLoading(true); setIsProgressiveLoading(true);
       setContent(""); setProgressPercent(0);
       setRubriquesStatus(p => ({ ...p, 0: "in-progress" }));
-      setProgressiveStats(null);
+      setProgressiveStats({
+        processed: 0,
+        total: 0,
+        current_batch: "Préparation...",
+        speed: "Initialisation ⚡"
+      });
 
       const passage = (selectedVerse === "--" || selectedVerse === "vide")
         ? `${selectedBook} ${selectedChapter}`
         : `${selectedBook} ${selectedChapter}:${selectedVerse}`;
 
-      let accumulated = "", hasMore = true, nextStartVerse = 1;
-      let totalVerses = 0, processedVerses = 0;
+      // Utiliser l'endpoint existant comme les autres boutons
+      const { data, url } = await smartPost(ENDPOINTS.verse, { 
+        passage, 
+        version: selectedVersion 
+      });
+      console.log("[API OK]", url);
 
-      while (hasMore) {
-        const { data, url } = await smartPost(ENDPOINTS.verseProgressive, {
-          passage, 
-          version: selectedVersion, 
-          batch_size: nextStartVerse === 1 ? 5 : 3, // 5 premiers versets rapidement, puis 3 par batch
-          start_verse: nextStartVerse,
-          priority_mode: nextStartVerse === 1 // Mode priorité pour les 5 premiers
-        });
-        console.log("[API OK]", url);
-
-        accumulated += data.batch_content || "";
+      // Simuler l'effet progressif côté frontend pour l'UX
+      const content = postProcessMarkdown(data.content || "Aucun contenu généré");
+      const sections = content.split(/VERSET \d+/);
+      
+      // Affichage progressif simulé
+      let accumulated = "";
+      const totalSections = sections.length;
+      
+      // Ajouter l'introduction
+      if (sections[0]) {
+        accumulated += sections[0];
         setContent(formatContent(accumulated));
-        setProgressPercent(Math.round(data.total_progress || 0));
+        setProgressPercent(10);
+        setProgressiveStats({
+          processed: 0,
+          total: totalSections - 1,
+          current_batch: "Introduction",
+          speed: "Rapide ⚡"
+        });
+        await wait(300);
+      }
 
-        // Mise à jour des stats
-        if (data.verse_stats) {
-          setProgressiveStats({
-            processed: data.verse_stats.processed,
-            total: data.verse_stats.total,
-            current_batch: data.verse_range,
-            speed: nextStartVerse === 1 ? "Rapide ⚡" : "Standard"
-          });
-        }
-
-        hasMore = !!data.has_more;
-        nextStartVerse = data.next_start_verse || nextStartVerse + (nextStartVerse === 1 ? 5 : 3);
-        setCurrentBatchVerse(nextStartVerse);
-
+      // Ajouter les versets progressivement
+      for (let i = 1; i < sections.length; i++) {
+        const versetSection = `VERSET ${i}${sections[i] || ""}`;
+        accumulated += versetSection;
+        setContent(formatContent(accumulated));
+        
+        const progress = Math.round(10 + (i / (totalSections - 1)) * 90);
+        setProgressPercent(progress);
+        
+        setProgressiveStats({
+          processed: i,
+          total: totalSections - 1,
+          current_batch: `Verset ${i}`,
+          speed: i <= 5 ? "Rapide ⚡" : "Standard"
+        });
+        
         // Délai réduit pour les 5 premiers versets
-        await wait(nextStartVerse <= 6 ? 200 : 400);
+        await wait(i <= 5 ? 200 : 400);
       }
 
       setRubriquesStatus(p => ({ ...p, 0: "completed" }));
       setProgressPercent(100);
       setProgressiveStats(prev => prev ? {...prev, speed: "Terminé ✅"} : null);
+      saveCurrentStudy();
     } catch (err) {
       console.error("Erreur génération progressive:", err);
       setContent(`Erreur lors de la génération: ${err.message}`);
       setRubriquesStatus(p => ({ ...p, 0: "error" }));
     } finally {
       setIsLoading(false); setIsProgressiveLoading(false);
+      setTimeout(() => setProgressPercent(100), 100);
     }
   };
 

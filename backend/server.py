@@ -352,45 +352,64 @@ async def generate_enriched_theological_explanation(verse_text: str, book: str, 
     return generate_smart_fallback_explanation(verse_text, book, chap, vnum)
 
 async def generate_gemini_explanation(verse_text: str, book: str, chap: int, vnum: int) -> str:
-    """Génère une explication enrichie avec Gemini."""
+    """Génère une explication théologique TRÈS enrichie avec Gemini."""
     try:
         chat = (
             LlmChat(
                 api_key=EMERGENT_LLM_KEY,
-                session_id=f"verse_enriched_{book}_{chap}_{vnum}",
-                system_message="""Tu es un théologien expert spécialisé dans l'exégèse biblique. 
-Tes explications sont :
-- Précises et contextuelles (250-350 mots)
-- Doctrinalement solides et orthodoxes
-- Riches en références canoniques
-- Accessibles mais substantielles
-- Centrées sur Christ et l'économie du salut""",
+                session_id=f"verse_ultra_enriched_{book}_{chap}_{vnum}",
+                system_message="""Tu es un DOCTEUR EN THÉOLOGIE BIBLIQUE de niveau universitaire, spécialisé dans l'exégèse approfondie. 
+Tes explications sont d'un niveau ACADÉMIQUE SUPÉRIEUR :
+- 400-500 mots minimum par verset
+- Terminologie technique précise (hébreu/grec/latin)
+- Références patristiques et réformées
+- Analyse grammaticale et syntaxique
+- Contexte historico-culturel détaillé
+- Implications dogmatiques et sotériologiques
+- Christologie systématique""",
             ).with_model("gemini", "gemini-2.0-flash")
         )
         
         prompt = f"""
-Analyse théologique approfondie de {book} {chap}:{vnum}
+EXÉGÈSE ACADÉMIQUE APPROFONDIE : {book} {chap}:{vnum}
 
-TEXTE : "{verse_text}"
+TEXTE MASSORÉTIQUE/GREC : "{verse_text}"
 
-Fournis une explication théologique complète incluant :
+Produis une ANALYSE THÉOLOGIQUE UNIVERSITAIRE structurée ainsi :
 
-1. **Contexte immédiat** : Situation dans le chapitre/livre
-2. **Analyse lexicale** : Mots-clés hébreux/grecs significatifs
-3. **Doctrine centrale** : Enseignement théologique principal
-4. **Typologie/Christologie** : Lien avec Christ et l'économie du salut
-5. **Références canoniques** : 2-3 parallèles bibliques pertinents
-6. **Application spirituelle** : Impact pour la foi et la vie chrétienne
+**I. ANALYSE TEXTUELLE ET LEXICALE**
+- Termes hébreux/grecs clés avec racines étymologiques
+- Nuances grammaticales et syntaxiques
+- Variantes textuelles significatives
 
-Format : Paragraphes fluides (250-350 mots), pas de listes à puces.
-Style : Académique mais accessible, centré sur l'Évangile.
+**II. CONTEXTE HISTORICO-LITTÉRAIRE** 
+- Sitz im Leben du passage
+- Structure rhétorique et littéraire
+- Parallèles dans la littérature du Proche-Orient ancien
+
+**III. THÉOLOGIE BIBLIQUE CANONIQUE**
+- Développement du thème dans l'AT/NT
+- Typologie et accomplissement christologique  
+- Économie trinitaire révélée
+
+**IV. HISTOIRE DE L'INTERPRÉTATION**
+- Perspective patristique (Chrysostome, Augustin, etc.)
+- Apport de la Réforme (Calvin, Luther)
+- Consensus évangélique contemporain
+
+**V. APPLICATIONS PASTORALES**
+- Implications sotériologiques
+- Sanctification et croissance spirituelle
+- Dimension ecclésiale et missionnelle
+
+EXIGENCES : 400-500 mots, terminologie technique précise, références savantes, style académique mais pastoral.
 """
         
         resp = await chat.send_message(UserMessage(text=prompt))
-        if resp and len(resp.strip()) > 100:
+        if resp and len(resp.strip()) > 300:
             return format_theological_content(resp.strip())
     except Exception as e:
-        print(f"Gemini generation error: {e}")
+        print(f"Gemini ultra-enriched generation error: {e}")
     
     return ""
 

@@ -571,13 +571,16 @@ function App() {
 
   const formatContent = (text) => {
     if (!text) return "";
-    const isVxV = text.includes("VERSET") && text.includes("TEXTE BIBLIQUE") && text.includes("EXPLICATION THÉOLOGIQUE");
-    if (isVxV) return formatVerseByVerseContent(text);
+    
+    // Formatage simple et efficace pour tous les types de contenu
     return text
       .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
       .replace(/^\# (.*$)/gim, "<h1>$1</h1>")
       .replace(/^\## (.*$)/gim, "<h2>$1</h2>")
       .replace(/^\### (.*$)/gim, "<h3>$1</h3>")
+      .replace(/^VERSET (\d+)$/gim, "<h2 class='verset-header'>📖 VERSET $1</h2>")
+      .replace(/^TEXTE BIBLIQUE\s*:$/gim, "<h4 class='texte-biblique-label'>📜 TEXTE BIBLIQUE :</h4>")
+      .replace(/^EXPLICATION THÉOLOGIQUE\s*:$/gim, "<h4 class='explication-label'>🎓 EXPLICATION THÉOLOGIQUE :</h4>")
       .split("\n\n")
       .map(p => (p.trim() ? `<p>${p.replace(/\n/g, "<br>")}</p>` : ""))
       .join("");

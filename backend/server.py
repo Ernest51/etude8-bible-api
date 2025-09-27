@@ -377,13 +377,15 @@ async def generate_enriched_theological_explanation(verse_text: str, book: str, 
     return generate_smart_fallback_explanation(verse_text, book, chap, vnum)
 
 async def generate_gemini_explanation(verse_text: str, book: str, chap: int, vnum: int) -> str:
-    """Génère une explication théologique TRÈS enrichie avec Gemini."""
+    """Génère une explication théologique TRÈS enrichie avec Gemini (Emergent ou direct)."""
     try:
-        chat = (
-            LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=f"verse_ultra_enriched_{book}_{chap}_{vnum}",
-                system_message="""Tu es un DOCTEUR EN THÉOLOGIE BIBLIQUE de niveau universitaire, spécialisé dans l'exégèse approfondie. 
+        if EMERGENT_AVAILABLE and EMERGENT_LLM_KEY:
+            # Utiliser Emergent integrations
+            chat = (
+                LlmChat(
+                    api_key=EMERGENT_LLM_KEY,
+                    session_id=f"verse_ultra_enriched_{book}_{chap}_{vnum}",
+                    system_message="""Tu es un DOCTEUR EN THÉOLOGIE BIBLIQUE de niveau universitaire, spécialisé dans l'exégèse approfondie. 
 Tes explications sont d'un niveau ACADÉMIQUE SUPÉRIEUR :
 - 400-500 mots minimum par verset
 - Terminologie technique précise (hébreu/grec/latin)
@@ -392,10 +394,10 @@ Tes explications sont d'un niveau ACADÉMIQUE SUPÉRIEUR :
 - Contexte historico-culturel détaillé
 - Implications dogmatiques et sotériologiques
 - Christologie systématique""",
-            ).with_model("gemini", "gemini-2.0-flash")
-        )
-        
-        prompt = f"""
+                ).with_model("gemini", "gemini-2.0-flash")
+            )
+            
+            prompt = f"""
 EXÉGÈSE ACADÉMIQUE APPROFONDIE : {book} {chap}:{vnum}
 
 TEXTE MASSORÉTIQUE/GREC : "{verse_text}"
@@ -429,10 +431,32 @@ Produis une ANALYSE THÉOLOGIQUE UNIVERSITAIRE structurée ainsi :
 
 EXIGENCES : 400-500 mots, terminologie technique précise, références savantes, style académique mais pastoral.
 """
-        
-        resp = await chat.send_message(UserMessage(text=prompt))
-        if resp and len(resp.strip()) > 300:
-            return format_theological_content(resp.strip())
+            
+            resp = await chat.send_message(UserMessage(text=prompt))
+            if resp and len(resp.strip()) > 300:
+                return format_theological_content(resp.strip())
+                
+        elif GEMINI_AVAILABLE and not EMERGENT_AVAILABLE:
+            # Utiliser Gemini direct (pour Railway)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            prompt = f"""Tu es un théologien expert. Analyse ce verset biblique de façon académique :
+
+VERSET : {book} {chap}:{vnum} - "{verse_text}"
+
+Fournis une explication théologique approfondie (300-400 mots) incluant :
+1. Analyse des mots-clés hébreux/grecs
+2. Contexte historique et littéraire
+3. Doctrine théologique centrale
+4. Lien avec Christ et l'économie du salut
+5. Application spirituelle
+
+Style : académique mais accessible, centré sur l'Évangile."""
+
+            response = model.generate_content(prompt)
+            if response.text and len(response.text.strip()) > 200:
+                return format_theological_content(response.text.strip())
+                
     except Exception as e:
         print(f"Gemini ultra-enriched generation error: {e}")
     

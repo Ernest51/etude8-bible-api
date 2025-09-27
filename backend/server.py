@@ -653,8 +653,16 @@ def generate_intelligent_rubric_content(rubric_num: int, book_name: str, chapter
 # =========================
 #        ROUTES
 # =========================
-@app.get("/api/")
+@app.get("/")
 def root():
+    return {"message": APP_NAME, "status": "Railway deployment successful"}
+
+@app.get("/health") 
+def health_check():
+    return {"status": "healthy", "message": "Railway backend operational"}
+
+@app.get("/api/")
+def api_root():
     return {"message": APP_NAME}
 
 @app.get("/api/test")

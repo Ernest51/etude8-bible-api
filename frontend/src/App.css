@@ -711,6 +711,38 @@ strong {
   flex: 1;
 }
 
+/* Styles pour le contenu verset par verset */
+.verset-header {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  margin: 20px 0 15px 0;
+  font-size: 1.2em;
+  font-weight: 600;
+}
+
+.texte-biblique-label {
+  color: #2d5016;
+  font-weight: 600;
+  margin: 15px 0 8px 0;
+  padding: 8px 12px;
+  background: #f0f9ff;
+  border-left: 4px solid #0ea5e9;
+  border-radius: 4px;
+}
+
+.explication-label {
+  color: #7c2d12;
+  font-weight: 600;
+  margin: 15px 0 8px 0;
+  padding: 8px 12px;
+  background: #fefce8;
+  border-left: 4px solid #eab308;
+  border-radius: 4px;
+}
+
+/* Contenu principal */
 .content-area {
   padding: 30px;
   min-height: 500px;

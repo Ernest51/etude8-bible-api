@@ -198,6 +198,7 @@ function App() {
   // États génération progressive
   const [isProgressiveLoading, setIsProgressiveLoading] = useState(false);
   const [currentBatchVerse, setCurrentBatchVerse] = useState(1);
+  const [progressiveStats, setProgressiveStats] = useState(null);
 
   // Thèmes
   const colorThemes = [
@@ -367,6 +368,7 @@ function App() {
     setSelectedBook("--"); setSelectedChapter("--"); setSelectedVerse("--");
     setSelectedVersion("LSG"); setSelectedLength(500); setActiveRubrique(0);
     setContent(""); setRubriquesStatus({});
+    setProgressiveStats(null);
   };
 
   const handleRubriqueSelect = (id) => {
@@ -413,7 +415,7 @@ function App() {
     const btnGemini = document.querySelector('.btn-gemini');
     if (btnGemini) { btnGemini.style.background = `linear-gradient(90deg, ${theme.secondary}, ${theme.accent})`; btnGemini.style.color = 'white'; btnGemini.style.border = 'none'; }
 
-    const btnVersets = document.querySelector('.btn-versets');
+    const btnVersets = document.querySelector('.btn-versets-prog');
     if (btnVersets) { btnVersets.style.background = theme.accent; btnVersets.style.color = 'white'; btnVersets.style.border = 'none'; }
 
     const btnGenerate = document.querySelector('.btn-generate');
@@ -432,16 +434,22 @@ function App() {
       setIsLoading(true); setIsProgressiveLoading(true);
       setContent(""); setProgressPercent(0);
       setRubriquesStatus(p => ({ ...p, 0: "in-progress" }));
+      setProgressiveStats(null);
 
       const passage = (selectedVerse === "--" || selectedVerse === "vide")
         ? `${selectedBook} ${selectedChapter}`
         : `${selectedBook} ${selectedChapter}:${selectedVerse}`;
 
       let accumulated = "", hasMore = true, nextStartVerse = 1;
+      let totalVerses = 0, processedVerses = 0;
 
       while (hasMore) {
         const { data, url } = await smartPost(ENDPOINTS.verseProgressive, {
-          passage, version: selectedVersion, batch_size: 5, start_verse: nextStartVerse
+          passage, 
+          version: selectedVersion, 
+          batch_size: nextStartVerse === 1 ? 5 : 3, // 5 premiers versets rapidement, puis 3 par batch
+          start_verse: nextStartVerse,
+          priority_mode: nextStartVerse === 1 // Mode priorité pour les 5 premiers
         });
         console.log("[API OK]", url);
 
@@ -449,15 +457,27 @@ function App() {
         setContent(formatContent(accumulated));
         setProgressPercent(Math.round(data.total_progress || 0));
 
+        // Mise à jour des stats
+        if (data.verse_stats) {
+          setProgressiveStats({
+            processed: data.verse_stats.processed,
+            total: data.verse_stats.total,
+            current_batch: data.verse_range,
+            speed: nextStartVerse === 1 ? "Rapide ⚡" : "Standard"
+          });
+        }
+
         hasMore = !!data.has_more;
-        nextStartVerse = data.next_start_verse || nextStartVerse + 5;
+        nextStartVerse = data.next_start_verse || nextStartVerse + (nextStartVerse === 1 ? 5 : 3);
         setCurrentBatchVerse(nextStartVerse);
 
-        await wait(400);
+        // Délai réduit pour les 5 premiers versets
+        await wait(nextStartVerse <= 6 ? 200 : 400);
       }
 
       setRubriquesStatus(p => ({ ...p, 0: "completed" }));
       setProgressPercent(100);
+      setProgressiveStats(prev => prev ? {...prev, speed: "Terminé ✅"} : null);
     } catch (err) {
       console.error("Erreur génération progressive:", err);
       setContent(`Erreur lors de la génération: ${err.message}`);
@@ -467,35 +487,9 @@ function App() {
     }
   };
 
-  const generateVerseByVerse = async () => {
-    try {
-      setIsLoading(true); setContent("Génération en cours...");
-      setRubriquesStatus(p => ({ ...p, 0: "in-progress" }));
-
-      const passage = (selectedVerse === "--" || selectedVerse === "vide")
-        ? `${selectedBook} ${selectedChapter}`
-        : `${selectedBook} ${selectedChapter}:${selectedVerse}`;
-
-      const { data, url } = await smartPost(ENDPOINTS.verse, { passage, version: selectedVersion });
-      console.log("[API OK]", url);
-
-      await animateProgress(1200);
-      setContent(postProcessMarkdown(data.content || "Aucun contenu généré"));
-      setRubriquesStatus(p => ({ ...p, 0: "completed" }));
-      saveCurrentStudy();
-    } catch (err) {
-      console.error("Erreur génération verset:", err);
-      setContent(`Erreur lors de la génération: ${err.message}`);
-      setRubriquesStatus(p => ({ ...p, 0: "error" }));
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => setProgressPercent(100), 100);
-    }
-  };
-
   const generateWithGemini = async () => {
     try {
-      setIsLoading(true); setContent("Génération avec Gemini en cours...");
+      setIsLoading(true); setContent("Génération avec Gemini enrichie en cours...");
       setRubriquesStatus(p => ({ ...p, [activeRubrique]: "in-progress" }));
 
       const passage = (selectedVerse === "--" || selectedVerse === "vide")
@@ -504,8 +498,8 @@ function App() {
 
       const pathList = activeRubrique === 0 ? ENDPOINTS.verseGemini : ENDPOINTS.studyGemini;
       const payload = activeRubrique === 0
-        ? { passage, version: selectedVersion, requestedRubriques: [0] }
-        : { passage, version: selectedVersion, requestedRubriques: [activeRubrique] };
+        ? { passage, version: selectedVersion, requestedRubriques: [0], enriched: true }
+        : { passage, version: selectedVersion, requestedRubriques: [activeRubrique], enriched: true };
 
       const { data, url } = await smartPost(pathList, payload);
       console.log("[API OK]", url);
@@ -532,7 +526,7 @@ function App() {
         : `${selectedBook} ${selectedChapter}:${selectedVerse}`;
 
       const { data, url } = await smartPost(ENDPOINTS.study, {
-        passage, version: selectedVersion, tokens: selectedLength
+        passage, version: selectedVersion, tokens: selectedLength, enriched: true
       });
       console.log("[API OK]", url);
 
@@ -627,7 +621,11 @@ function App() {
       <div className="progress-container">
         <div className="progress-pill">
           {progressPercent}%
-          {isProgressiveLoading && <span className="progressive-indicator"> ⚡ Progressif</span>}
+          {isProgressiveLoading && progressiveStats && (
+            <span className="progressive-indicator">
+              ⚡ {progressiveStats.speed} - {progressiveStats.current_batch} ({progressiveStats.processed}/{progressiveStats.total})
+            </span>
+          )}
         </div>
       </div>
 
@@ -665,8 +663,7 @@ function App() {
               {lastStudy ? `📖 ${lastStudy.book} ${lastStudy.chapter}${lastStudy.verse !== "--" ? ":" + lastStudy.verse : ""}` : "📖 Dernière étude"}
             </button>
             <button className={`btn-gemini ${isLoading ? "loading" : ""}`} onClick={generateWithGemini} disabled={isLoading}>🤖 Gemini Flash</button>
-            <button className="btn-versets" onClick={generateVerseByVerse} disabled={isLoading}>✅ Versets</button>
-            <button className="btn-versets-progressive" onClick={generateVerseByVerseProgressive} disabled={isLoading} title="Génération progressive">⚡ Progressif</button>
+            <button className="btn-versets-prog" onClick={generateVerseByVerseProgressive} disabled={isLoading} title="Analyse progressive enrichie - 5 premiers versets rapides">⚡ Versets Prog</button>
             <button className="btn-generate" onClick={generate28Points} disabled={isLoading}>Générer</button>
           </div>
         </div>
@@ -694,6 +691,13 @@ function App() {
                 <div className="loading-container">
                   <div className="loading-spinner"></div>
                   <p>Génération en cours...</p>
+                  {progressiveStats && (
+                    <div className="progressive-stats">
+                      <p>📊 Versets traités: {progressiveStats.processed}/{progressiveStats.total}</p>
+                      <p>🎯 Batch actuel: {progressiveStats.current_batch}</p>
+                      <p>⚡ Mode: {progressiveStats.speed}</p>
+                    </div>
+                  )}
                 </div>
               ) : content ? (
                 <div className="content-text" dangerouslySetInnerHTML={{ __html: formatContent(content) }} />
@@ -701,6 +705,7 @@ function App() {
                 <div className="welcome-section">
                   <h1>🙏 Bienvenue dans votre Espace d'Étude</h1>
                   <p>Cet outil vous accompagne dans une méditation biblique structurée et claire.</p>
+                  <p><strong>Nouveau:</strong> Le bouton "Versets Prog" génère rapidement les 5 premiers versets puis continue progressivement!</p>
                 </div>
               )}
             </div>

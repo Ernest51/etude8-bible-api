@@ -739,7 +739,7 @@ async def _generate_verse_by_verse_content(req: StudyRequest):
             continue
         vnum = int(m.group(1))
         vtxt = m.group(2).strip()
-        theox = await generate_enriched_theological_explanation(vtxt, book_label, chap, vnum, req.enriched)
+        theox = await generate_enriched_theological_explanation(vtxt, book_label, chap, vnum, enriched=True)  # Force enrichissement
         blocks.append(
             f"**VERSET {vnum}**\n\n"
             f"**TEXTE BIBLIQUE :**\n{vtxt}\n\n"

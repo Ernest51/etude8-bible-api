@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Diagnostic API — Étude 28 points & Verset par verset</title>
+<style>
+  :root{
+    --ok:#10b981;--warn:#f59e0b;--err:#ef4444;--ink:#111827;--muted:#6b7280;
+    --bg:#f9fafb;--card:#ffffff;--border:#e5e7eb;
+  }
+  body{margin:0;background:var(--bg);font-family:system-ui,Segoe UI,Roboto,Inter,Arial,sans-serif;color:var(--ink);}
+  header{padding:18px 16px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;}
+  header h1{margin:0 0 6px 0;font-size:22px}
+  header p{margin:0;color:#f3f4f6}
+  main{max-width:1100px;margin:20px auto;padding:0 12px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 6px 16px rgba(0,0,0,.06);padding:16px;margin-bottom:16px;}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .row > *{flex:1}
+  label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+  input,select,button,textarea{
+    font:inherit;border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#fff;
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid #6366f1}
+  button{cursor:pointer;background:#111827;color:#fff;border-color:#111827}
+  button.secondary{background:#6b7280;border-color:#6b7280}
+  button.warn{background:#f59e0b;border-color:#f59e0b}
+  button.ok{background:#10b981;border-color:#10b981}
+  small{color:var(--muted)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;border:1px solid var(--border);color:#111}
+  .badge.ok{background:#ecfdf5;border-color:#10b981;color:#065f46}
+  .badge.err{background:#fef2f2;border-color:#ef4444;color:#991b1b}
+  .badge.warn{background:#fffbeb;border-color:#f59e0b;color:#92400e}
+  pre{background:#0b1020;color:#e5e7eb;border-radius:10px;padding:12px;overflow:auto;font-size:12px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .hint{color:#6b7280;font-size:13px;margin-top:8px}
+  .list{margin:0;padding-left:18px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Diagnostic API (Railway) — Étude 28 & Verset/Verset</h1>
+  <p>Outil de test côté client (Vercel). Aucune modification de l’app. Utilisez-le pour repérer 404 / 500 / CORS / parsing.</p>
+</header>
+
+<main>
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>Base URL de l’API (Railway)</label>
+        <input id="apiBase" placeholder="https://etude8-bible-api-production.up.railway.app" />
+        <small>Astuce : essaie d’abord l’URL Railway ci-dessus. Laisse **Version** vide si « LSG » pose problème.</small>
+      </div>
+      <div style="flex:0 0 auto;display:flex;gap:8px;align-items:flex-end">
+        <button id="btnPing" class="ok">Tester /api et /api/health</button>
+        <button id="btnOpenapi" class="secondary">Lister les routes (openapi.json)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label>Passage (28 rubriques) — sans verset</label>
+        <input id="passage28" value="Nombres 2" />
+      </div>
+      <div>
+        <label>Version (laisser vide si absente dans l’API)</label>
+        <input id="version28" value="" />
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <button id="btn28NoVer">Tester 28 pts (Livre + Chapitre)</button>
+        <button id="btn28WithVer" class="warn">Tester 28 pts (Livre + Chapitre + Version)</button>
+      </div>
+    </div>
+    <div class="hint">Si « LSG » n’est pas supportée par ton instance, le test <i>avec Version</i> devrait échouer et l’autre réussir.</div>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label>Passage (Verset par verset) — Livre + Chapitre (verset optionnel)</label>
+        <input id="passageVbV" value="Genèse 1" />
+      </div>
+      <div>
+        <label>Verset (optionnel)</label>
+        <input id="verseOpt" placeholder="ex: 1 (laisser vide pour tout le chapitre)" />
+      </div>
+      <div>
+        <label>Version (laisser vide si absente dans l’API)</label>
+        <input id="versionVbV" value="" />
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <button id="btnVbVChap">Tester Verset/Verset (Chapitre complet)</button>
+        <button id="btnVbVSingle" class="warn">Tester Verset/Verset (Chapitre:Verset)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>Résultats</label>
+        <div id="results"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const results = $("results");
+
+function line(html){ const d=document.createElement('div'); d.innerHTML=html; results.prepend(d); }
+function pre(obj, title="") {
+  const d = document.createElement('div');
+  d.className = "card";
+  d.innerHTML = (title ? `<div style="margin-bottom:8px"><span class="badge">${title}</span></div>` : "")
+    + `<pre><code>${escapeHtml(typeof obj==='string'?obj:JSON.stringify(obj,null,2))}</code></pre>`;
+  results.prepend(d);
+}
+function escapeHtml(s){ return s.toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+function normalizeBase(u){
+  if(!u) return "";
+  return u.replace(/\/+$/,''); // retire / final
+}
+
+async function timedFetch(url, opts={}, timeout=20000){
+  const ctrl = new AbortController();
+  const id = setTimeout(()=>ctrl.abort(), timeout);
+  try{
+    const res = await fetch(url, {...opts, signal: ctrl.signal});
+    clearTimeout(id);
+    return res;
+  }catch(e){
+    clearTimeout(id);
+    throw e;
+  }
+}
+
+function summarizeResponse(res){
+  const headers = {};
+  res.headers.forEach((v,k)=>headers[k]=v);
+  return {
+    ok: res.ok, status: res.status, statusText: res.statusText,
+    url: res.url, headers
+  };
+}
+
+function guessProblem(error, resSummary){
+  // Heuristique d’explication
+  if(error && (error.name==="AbortError")) return {badge:"warn", msg:"Timeout : l’API ne répond pas (URL ok mais trop lente ou bloquée)."};
+  if(error && error.name==="TypeError") return {badge:"err", msg:"Échec réseau/CORS : domaine injoignable ou CORS bloqué (le navigateur a coupé la réponse)."};
+  if(resSummary){
+    if(resSummary.status===404) return {badge:"err", msg:"404 Not Found : route inexistante ou base URL incorrecte (/api/generate-28 absent ?)"};
+    if(resSummary.status===405) return {badge:"err", msg:"405 Method Not Allowed : la méthode HTTP ne correspond pas (POST attendu ?)"};
+    if(resSummary.status===500) return {badge:"err", msg:"500 Server Error : erreur côté API (trace utile dans logs Railway)."};
+  }
+  return {badge:"warn", msg:"Problème indéterminé : voir détails en dessous."};
+}
+
+function showOutcome(title, resSummary, bodyText, error){
+  const g = guessProblem(error, resSummary);
+  const badgeClass = g.badge || "warn";
+  const wrap = document.createElement('div');
+  wrap.className="card";
+
+  let headersHtml = "";
+  if(resSummary && resSummary.headers){
+    headersHtml = `<pre><code>${escapeHtml(JSON.stringify(resSummary.headers,null,2))}</code></pre>`;
+  }
+
+  const bodyHtml = bodyText ? `<pre><code>${escapeHtml(bodyText)}</code></pre>` : "";
+
+  wrap.innerHTML = `
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span class="badge ${badgeClass}">${g.msg}</span>
+      <span class="badge">Test: ${escapeHtml(title)}</span>
+      ${resSummary?`<span class="badge ${resSummary.ok?'ok':'err'}">HTTP ${resSummary.status} ${escapeHtml(resSummary.statusText||'')}</span>`:''}
+    </div>
+    <div style="margin-top:10px">
+      ${resSummary?`<div style="margin-bottom:6px;color:#6b7280">Réponse (statut + en-têtes)</div>`:''}
+      ${resSummary?`<pre><code>${escapeHtml(JSON.stringify(resSummary,null,2))}</code></pre>`:''}
+      ${headersHtml}
+      ${bodyHtml}
+      ${error?`<div style="margin-top:8px" class="badge err">Erreur JS: ${escapeHtml(error.message||String(error))}</div>`:''}
+    </div>
+  `;
+  results.prepend(wrap);
+}
+
+/* --------- Handlers ---------- */
+$("btnPing").onclick = async () => {
+  const base = normalizeBase($("apiBase").value);
+  if(!base){ alert("Renseigne l’URL de l’API Railway"); return; }
+
+  // /api
+  try{
+    const r = await timedFetch(`${base}/api/`, {method:"GET"});
+    const sum = summarizeResponse(r);
+    const txt = await r.text();
+    showOutcome("/api/ (GET)", sum, txt);
+  }catch(e){
+    showOutcome("/api/ (GET)", null, null, e);
+  }
+
+  // /api/health
+  try{
+    const r = await timedFetch(`${base}/api/health`, {method:"GET"});
+    const sum = summarizeResponse(r);
+    const txt = await r.text();
+    showOutcome("/api/health (GET)", sum, txt);
+  }catch(e){
+    showOutcome("/api/health (GET)", null, null, e);
+  }
+};
+
+$("btnOpenapi").onclick = async () => {
+  const base = normalizeBase($("apiBase").value);
+  if(!base){ alert("Renseigne l’URL de l’API Railway"); return; }
+  try{
+    const r = await timedFetch(`${base}/openapi.json`, {method:"GET"});
+    const sum = summarizeResponse(r);
+    let txt = await r.text();
+    showOutcome("/openapi.json (GET)", sum, txt);
+
+    // Affiche les routes utiles
+    try{
+      const json = JSON.parse(txt);
+      const paths = Object.keys(json.paths||{});
+      const wanted = ["/api/generate-28", "/api/generate-verse-by-verse", "/api/generate-study", "/api/health", "/api/"];
+      const found = wanted.map(p => `${p} : ${paths.includes(p) ? "✅ présent" : "❌ absent"}`).join("\n");
+      pre(found, "Routes clés détectées");
+    }catch(_){}
+  }catch(e){
+    showOutcome("/openapi.json (GET)", null, null, e);
+  }
+};
+
+$("btn28NoVer").onclick = async () => {
+  const base = normalizeBase($("apiBase").value);
+  const passage = $("passage28").value.trim();
+  if(!base||!passage){ alert("Base API et Passage requis"); return; }
+
+  const payload = { passage, version: "" }; // version vide
+  try{
+    const r = await timedFetch(`${base}/api/generate-28`, {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload)
+    }, 25000);
+    const sum = summarizeResponse(r);
+    const txt = await r.text();
+    showOutcome("POST /api/generate-28 (sans version)", sum, txt);
+  }catch(e){
+    showOutcome("POST /api/generate-28 (sans version)", null, null, e);
+  }
+};
+
+$("btn28WithVer").onclick = async () => {
+  const base = normalizeBase($("apiBase").value);
+  const passage = $("passage28").value.trim();
+  const version = $("version28").value.trim(); // si "LSG" n'existe pas, ça DOIT échouer
+  if(!base||!passage){ alert("Base API et Passage requis"); return; }
+
+  const payload = { passage: version? `${passage} ${version}` : passage, version };
+  try{
+    const r = await timedFetch(`${base}/api/generate-28`, {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload)
+    }, 25000);
+    const sum = summarizeResponse(r);
+    const txt = await r.text();
+    showOutcome("POST /api/generate-28 (avec version)", sum, txt);
+  }catch(e){
+    showOutcome("POST /api/generate-28 (avec version)", null, null, e);
+  }
+};
+
+$("btnVbVChap").onclick = async () => {
+  const base = normalizeBase($("apiBase").value);
+  const passage = $("passageVbV").value.trim();
+  const version = $("versionVbV").value.trim();
+  if(!base||!passage){ alert("Base API et Passage requis"); return; }
+
+  const payload = { passage: version? `${passage} ${version}` : passage, version };
+  try{
+    const r = await timedFetch(`${base}/api/generate-verse-by-verse`, {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload)
+    }, 25000);
+    const sum = summarizeResponse(r);
+    const txt = await r.text();
+    showOutcome("POST /api/generate-verse-by-verse (chapitre)", sum, txt);
+  }catch(e){
+    showOutcome("POST /api/generate-verse-by-verse (chapitre)", null, null, e);
+  }
+};
+
+$("btnVbVSingle").onclick = async () => {
+  const base = normalizeBase($("apiBase").value);
+  const basePassage = $("passageVbV").value.trim(); // ex "Genèse 1"
+  const v = $("verseOpt").value.trim();              // ex "1"
+  const version = $("versionVbV").value.trim();
+  if(!base||!basePassage){ alert("Base API et Passage requis"); return; }
+
+  const passage = v ? `${basePassage}:${v}` : basePassage;
+  const payload = { passage: version? `${passage} ${version}` : passage, version };
+  try{
+    const r = await timedFetch(`${base}/api/generate-verse-by-verse`, {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload)
+    }, 25000);
+    const sum = summarizeResponse(r);
+    const txt = await r.text();
+    showOutcome("POST /api/generate-verse-by-verse (chapitre:verset)", sum, txt);
+  }catch(e){
+    showOutcome("POST /api/generate-verse-by-verse (chapitre:verset)", null, null, e);
+  }
+};
+
+/* Pré-remplit l’API base avec une valeur plausible si dispo depuis le site précédent */
+(function bootstrap(){
+  const maybe = localStorage.getItem("apiBaseHint");
+  if(maybe) $("apiBase").value = maybe;
+})();
+$("apiBase").addEventListener("change", e => {
+  localStorage.setItem("apiBaseHint", e.target.value);
+});
+</script>
+</body>
+</html>

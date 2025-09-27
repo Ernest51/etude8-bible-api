@@ -1,0 +1,14 @@
+{
+  "name": "etude8-bible",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd frontend && yarn install --frozen-lockfile && DISABLE_ESLINT_PLUGIN=true CI=false yarn build",
+    "start": "cd frontend && yarn start"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

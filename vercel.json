@@ -1,0 +1,8 @@
+{
+  "buildCommand": "cd frontend && yarn install && DISABLE_ESLINT_PLUGIN=true CI=false yarn build",
+  "outputDirectory": "frontend/build",
+  "env": {
+    "CI": "false",
+    "DISABLE_ESLINT_PLUGIN": "true"
+  }
+}

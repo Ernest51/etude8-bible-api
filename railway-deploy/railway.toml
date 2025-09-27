@@ -1,0 +1,12 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+healthcheckPath = "/api/"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+
+[env]
+PYTHONPATH = "/app"
+PORT = "8000"

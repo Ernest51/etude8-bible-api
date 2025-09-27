@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Diagnostic API Étude 28 & Verset/Verset</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f7fafc;margin:0}
+  header{padding:16px 20px;background:#111827;color:#fff}
+  main{max-width:980px;margin:20px auto;padding:0 16px}
+  section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.06);padding:16px;margin-bottom:16px}
+  h2{margin:0 0 12px 0;font-size:18px}
+  label{display:block;margin:8px 0 4px;color:#374151}
+  input,textarea,select,button{font-size:14px}
+  input,select,textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  button{cursor:pointer;background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 14px;margin-right:8px}
+  button.secondary{background:#6b7280}
+  pre{white-space:pre-wrap;background:#0b1020;color:#c7d2fe;padding:12px;border-radius:8px;max-height:360px;overflow:auto}
+  .ok{color:#065f46}.warn{color:#92400e}.err{color:#991b1b}
+  .small{font-size:12px;color:#6b7280}
+</style>
+</head>
+<body>
+<header><strong>Diagnostic API (Railway) — Étude 28 & Verset/Verset</strong></header>
+<main>
+  <section>
+    <h2>1) Cible</h2>
+    <label>Base URL</label>
+    <input id="base" value="https://etude8-bible-api-production.up.railway.app" />
+    <div style="margin-top:10px">
+      <button onclick="ping()">Tester /api</button>
+      <button class="secondary" onclick="health()">Tester /api/health</button>
+      <button class="secondary" onclick="openapi()">Lister /openapi.json</button>
+    </div>
+    <div id="out1" class="small" style="margin-top:8px"></div>
+  </section>
+
+  <section>
+    <h2>2) Étude 28 points (POST /api/generate-study)</h2>
+    <div class="row">
+      <div>
+        <label>Passage (Livre Chapitre ou Livre Chapitre:Verset)</label>
+        <input id="pass28" value="Nombres 2" />
+      </div>
+      <div>
+        <label>Version (laisser vide)</label>
+        <input id="ver28" value="" />
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <button onclick="study()">Tester 28 points</button>
+      <button class="secondary" onclick="studyAlias()">Tester alias /api/generate-28</button>
+    </div>
+    <div id="diag28" class="small" style="margin-top:8px"></div>
+    <pre id="res28"></pre>
+  </section>
+
+  <section>
+    <h2>3) Verset/Verset (POST /api/generate-verse-by-verse)</h2>
+    <div class="row">
+      <div>
+        <label>Passage</label>
+        <input id="passVV" value="Genèse 1" />
+      </div>
+      <div>
+        <label>Version (laisser vide)</label>
+        <input id="verVV" value="" />
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <button onclick="vv()">Tester Chapitre complet</button>
+      <button class="secondary" onclick="vv1()">Tester Chapitre:Verset</button>
+    </div>
+    <div id="diagVV" class="small" style="margin-top:8px"></div>
+    <pre id="resVV"></pre>
+  </section>
+</main>
+
+<script>
+async function fetchText(url, opt){
+  const r = await fetch(url, opt);
+  const text = await r.text();
+  return { ok:r.ok, status:r.status, text };
+}
+function show(id, html){ document.getElementById(id).innerHTML = html; }
+function pre(id, text){ document.getElementById(id).textContent = text; }
+
+function safeJSON(text){
+  try{ return JSON.parse(text); }catch{ return text; }
+}
+function isString(v){ return typeof v === "string" || v instanceof String; }
+function containsRubrics(text){
+  if (!isString(text)) return false;
+  const rubs = [
+    "Prière d'ouverture","Structure littéraire","Questions du chapitre précédent",
+    "Thème doctrinal","Fondements théologiques","Contexte historique",
+    "Contexte culturel","Contexte géographique","Analyse lexicale","Parallèles bibliques",
+    "Prophétie et accomplissement","Personnages","Structure rhétorique","Théologie trinitaire",
+    "Christ au centre","Évangile et grâce","Application personnelle","Application communautaire",
+    "Prière de réponse","Questions d'étude","Points de vigilance","Objections et réponses",
+    "Perspective missionnelle","Éthique chrétienne","Louange / liturgie","Méditation guidée",
+    "Mémoire / versets clés","Plan d'action"
+  ];
+  let hits=0;
+  for (const name of rubs){
+    const re = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i");
+    if (re.test(text)){ hits++; if (hits>=3) return true; }
+  }
+  if (/^##\s*Rubriques/im.test(text)) return true;
+  if (/\*\*\s*1\.\s+/i.test(text)) return true;
+  return false;
+}
+
+async function ping(){
+  const base = document.getElementById('base').value.replace(/\/$/,'');
+  const r = await fetchText(base + '/api/');
+  show('out1', r.ok
+    ? `<span class="ok">/api OK</span> (HTTP ${r.status}) — ${r.text}`
+    : `<span class="err">/api FAIL</span> (HTTP ${r.status}) — ${r.text}`);
+}
+async function health(){
+  const base = document.getElementById('base').value.replace(/\/$/,'');
+  const r = await fetchText(base + '/api/health');
+  show('out1', r.ok
+    ? `<span class="ok">/api/health OK</span> (HTTP ${r.status}) — ${r.text}`
+    : `<span class="warn">/api/health manquant</span> (HTTP ${r.status}) — ${r.text}`);
+}
+async function openapi(){
+  const base = document.getElementById('base').value.replace(/\/$/,'');
+  const r = await fetchText(base + '/openapi.json');
+  let info = '';
+  if (r.ok){
+    const j = safeJSON(r.text);
+    const paths = (j && j.paths) ? Object.keys(j.paths) : [];
+    info = `<div>Routes: <code>${paths.join(', ')}</code></div>`;
+  }
+  show('out1', r.ok
+    ? `<span class="ok">/openapi.json OK</span> (HTTP ${r.status}) ${info}`
+    : `<span class="err">/openapi.json FAIL</span> (HTTP ${r.status}) — ${r.text}`);
+}
+
+async function studyCore(path){
+  const base = document.getElementById('base').value.replace(/\/$/,'');
+  const passage = document.getElementById('pass28').value.trim();
+  const version = document.getElementById('ver28').value.trim(); // laisser vide
+  const body = JSON.stringify({
+    passage: passage, version: version, tokens: 500, model: "darby",
+    requestedRubriques: Array.from({length:28}, (_,i)=>i)
+  });
+  const r = await fetchText(base + path, { method:'POST', headers:{'Content-Type':'application/json'}, body });
+  pre('res28', r.text);
+  const j = safeJSON(r.text);
+  const content = (j && j.content !== undefined) ? j.content : j;
+  const okStr = isString(content);
+  const hasRub = okStr && containsRubrics(content);
+  show('diag28',
+    (r.ok ? `<span class="ok">HTTP ${r.status}</span>` : `<span class="err">HTTP ${r.status}</span>`) +
+    ` — type(content) = <code>${okStr?'string':'non-string'}</code>` +
+    ` — rubriques détectées: <code>${hasRub?'OUI':'NON'}</code>` +
+    (okStr ? ` — longueur: ${content.length}` : '')
+  );
+}
+async function study(){ return studyCore('/api/generate-study'); }
+async function studyAlias(){ return studyCore('/api/generate-28'); }
+
+async function vvCore(passage){
+  const base = document.getElementById('base').value.replace(/\/$/,'');
+  const version = document.getElementById('verVV').value.trim(); // vide
+  const body = JSON.stringify({ passage, version });
+  const r = await fetchText(base + '/api/generate-verse-by-verse', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body
+  });
+  pre('resVV', r.text);
+  const j = safeJSON(r.text);
+  const content = (j && j.content !== undefined) ? j.content : j;
+  show('diagVV',
+    (r.ok ? `<span class="ok">HTTP ${r.status}</span>` : `<span class="err">HTTP ${r.status}</span>`) +
+    ` — type(content) = <code>${(typeof content)}</code>` +
+    (typeof content === 'string' ? ` — longueur: ${content.length}` : '')
+  );
+}
+async function vv(){ return vvCore(document.getElementById('passVV').value.trim()); }
+async function vv1(){ return vvCore('Genèse 1:1'); }
+</script>
+</body>
+</html>

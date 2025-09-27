@@ -504,7 +504,7 @@ strong {
 
 /* Effet de brillance pour tous les boutons d'action */
 .btn-reset::before, .btn-palette::before, .btn-last-study::before, 
-.btn-gemini::before, .btn-versets::before, .btn-versets-progressive::before, .btn-generate::before {
+.btn-gemini::before, .btn-versets::before, .btn-versets-prog::before, .btn-generate::before {
   content: '';
   position: absolute;
   top: 0;

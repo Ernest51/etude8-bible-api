@@ -22,7 +22,7 @@ load_dotenv()
 
 API_BASE = "https://api.scripture.api.bible/v1"
 APP_NAME = "Bible Study API - Darby Enhanced"
-BIBLE_API_KEY = os.getenv("BIBLE_API_KEY", "")
+BIBLE_API_KEY = os.getenv("BIBLE_API_KEY", "demo_key_for_testing")
 PREFERRED_BIBLE_ID = os.getenv("BIBLE_ID", "a93a92589195411f-01")  # Darby FR
 EMERGENT_LLM_KEY = os.getenv("EMERGENT_LLM_KEY")
 

@@ -322,33 +322,47 @@ def parse_passage_input(p: str):
 #   Génération théologique ENRICHIE
 # =========================
 async def generate_enriched_theological_explanation(verse_text: str, book: str, chap: int, vnum: int, enriched: bool = True) -> str:
-    """Priorité: ta bibliothèque locale -> Gemini enrichi -> fallback enrichi."""
+    """PRIORITÉ ULTRA-ENRICHISSEMENT: Gemini académique -> fallback avancé -> base locale."""
     
-    # 1) Bibliothèque locale
+    # 1) PRIORITÉ ABSOLUE: Gemini ultra-enrichi (niveau académique)
+    if enriched and GEMINI_AVAILABLE and EMERGENT_LLM_KEY:
+        try:
+            gemini_result = await generate_gemini_explanation(verse_text, book, chap, vnum)
+            if gemini_result and len(gemini_result.strip()) > 300:  # Exigence minimale 300+ mots
+                print(f"✅ Gemini ultra-enrichi généré pour {book} {chap}:{vnum} ({len(gemini_result)} car.)")
+                return gemini_result
+        except Exception as e:
+            print(f"⚠️ Gemini error for {book} {chap}:{vnum} -> {e}")
+
+    # 2) Fallback ULTRA-enrichi et intelligent (sans LLM mais très détaillé)
+    advanced_fallback = generate_smart_fallback_explanation(verse_text, book, chap, vnum)
+    if len(advanced_fallback) > 400:  # Si le fallback est riche
+        print(f"✅ Fallback ultra-enrichi pour {book} {chap}:{vnum} ({len(advanced_fallback)} car.)")
+        return advanced_fallback
+
+    # 3) Base locale SEULEMENT comme dernier recours (et enrichir si possible)
     if VLIB_AVAILABLE:
         try:
             chap_dict = vlib_chapter_dict(book, chap) or {}
             entry = chap_dict.get(vnum)
             if entry and entry.get("explanation"):
                 base_explanation = format_theological_content(entry["explanation"])
-                if enriched and len(base_explanation) < 200:
-                    # Enrichir avec Gemini si contenu local court
-                    gemini_enriched = await enrich_with_gemini(verse_text, book, chap, vnum, base_explanation)
-                    return gemini_enriched if gemini_enriched else base_explanation
+                print(f"⚠️ Base locale utilisée pour {book} {chap}:{vnum} ({len(base_explanation)} car.)")
+                
+                # Enrichir avec Gemini même si base locale existe
+                if enriched and GEMINI_AVAILABLE and EMERGENT_LLM_KEY:
+                    try:
+                        enriched_result = await enrich_with_gemini(verse_text, book, chap, vnum, base_explanation)
+                        if enriched_result and len(enriched_result) > len(base_explanation) + 100:
+                            return enriched_result
+                    except Exception:
+                        pass
+                
                 return base_explanation
         except Exception as e:
-            print(f"VLIB miss for {book} {chap}:{vnum} -> {e}")
+            print(f"VLIB error for {book} {chap}:{vnum} -> {e}")
 
-    # 2) Gemini enrichi si dispo
-    if enriched and GEMINI_AVAILABLE and EMERGENT_LLM_KEY:
-        try:
-            gemini_result = await generate_gemini_explanation(verse_text, book, chap, vnum)
-            if gemini_result and len(gemini_result.strip()) > 100:
-                return gemini_result
-        except Exception as e:
-            print(f"Gemini error for {book} {chap}:{vnum} -> {e}")
-
-    # 3) Fallback enrichi et intelligent
+    # 4) Dernier recours: fallback basique
     return generate_smart_fallback_explanation(verse_text, book, chap, vnum)
 
 async def generate_gemini_explanation(verse_text: str, book: str, chap: int, vnum: int) -> str:

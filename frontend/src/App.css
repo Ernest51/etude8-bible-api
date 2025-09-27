@@ -1185,7 +1185,7 @@ strong {
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
   .btn-validate, .btn-read, .btn-chat, .btn-quick,
   .btn-reset, .btn-palette, .btn-last-study, 
-  .btn-gemini, .btn-versets, .btn-generate {
+  .btn-gemini, .btn-versets, .btn-versets-prog, .btn-generate {
     border-radius: 13px;
   }
   

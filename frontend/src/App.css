@@ -517,7 +517,7 @@ strong {
 
 .btn-reset:hover::before, .btn-palette:hover::before, .btn-last-study:hover:not(:disabled)::before,
 .btn-gemini:hover:not(:disabled)::before, .btn-versets:hover:not(:disabled)::before, 
-.btn-versets-progressive:hover:not(:disabled)::before, .btn-generate:hover:not(:disabled)::before {
+.btn-versets-prog:hover:not(:disabled)::before, .btn-generate:hover:not(:disabled)::before {
   left: 100%;
 }
 

@@ -699,7 +699,7 @@ async def _generate_verse_by_verse_content(req: StudyRequest):
     )
 
     if verse:
-        theox = await generate_enriched_theological_explanation(text, book_label, chap, verse, req.enriched)
+        theox = await generate_enriched_theological_explanation(text, book_label, chap, verse, enriched=True)  # Force enrichissement
         theox = format_theological_content(theox)
         content = (
             f"{title}\n\n{intro}\n\n"

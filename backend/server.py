@@ -26,7 +26,7 @@ BIBLE_API_KEY = os.getenv("BIBLE_API_KEY", "demo_key_for_testing")
 PREFERRED_BIBLE_ID = os.getenv("BIBLE_ID", "a93a92589195411f-01")  # Darby FR
 EMERGENT_LLM_KEY = os.getenv("EMERGENT_LLM_KEY")
 
-# ==== Bibliothèque locale riche (ta base) ====
+# ==== Chargement de la bibliothèque locale (optionnelle pour Railway) ====
 try:
     from verse_by_verse_content import (
         get_verse_by_verse_content as vlib_chapter_dict,
@@ -34,9 +34,14 @@ try:
     )
     VLIB_AVAILABLE = True
     print("✅ Local verse-by-verse library loaded")
-except Exception:
+except Exception as e:
+    print(f"ℹ️ No local verse-by-verse library found: {e}")
     VLIB_AVAILABLE = False
-    print("ℹ️ No local verse-by-verse library found")
+    # Créer des fonctions de fallback pour éviter les erreurs
+    def vlib_chapter_dict(book, chapter):
+        return {}
+    def vlib_all_verses(book, chapter):
+        return []
 
 # ==== Intégration Gemini directe (pour production Railway) ====
 import google.generativeai as genai

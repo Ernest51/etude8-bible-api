@@ -38,14 +38,25 @@ except Exception:
     VLIB_AVAILABLE = False
     print("ℹ️ No local verse-by-verse library found")
 
-# ==== Intégration Emergent / Gemini (optionnelle) ====
+# ==== Intégration Gemini directe (pour production Railway) ====
+import google.generativeai as genai
 try:
+    # Tenter d'utiliser Emergent d'abord (environnement local)
     from emergentintegrations.llm.chat import LlmChat, UserMessage
+    EMERGENT_AVAILABLE = True
     GEMINI_AVAILABLE = True
-    print("✅ Emergent integrations loaded - Google Gemini Flash available")
+    print("✅ Emergent integrations loaded - Using Emergent LLM")
 except Exception:
-    GEMINI_AVAILABLE = False
-    print("ℹ️ Emergent integrations not available - using fallback mode")
+    EMERGENT_AVAILABLE = False
+    # Fallback : Utiliser Gemini direct avec clé API
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if GEMINI_API_KEY:
+        genai.configure(api_key=GEMINI_API_KEY)
+        GEMINI_AVAILABLE = True
+        print("✅ Google Gemini configured directly with API key")
+    else:
+        GEMINI_AVAILABLE = False
+        print("ℹ️ No Gemini integration available - using enhanced fallback mode")
 
 # ==== CORS ====
 _default_origins = [

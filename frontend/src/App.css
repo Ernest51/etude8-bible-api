@@ -375,7 +375,7 @@ strong {
 }
 
 /* Style de base pour tous les boutons d'action */
-.btn-reset, .btn-palette, .btn-last-study, .btn-gemini, .btn-versets, .btn-versets-progressive, .btn-generate {
+.btn-reset, .btn-palette, .btn-last-study, .btn-gemini, .btn-versets, .btn-versets-prog, .btn-generate {
   padding: 16px 24px;
   border: none;
   border-radius: 14px;

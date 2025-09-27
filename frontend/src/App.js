@@ -452,46 +452,50 @@ function App() {
       });
       console.log("[API OK]", url);
 
-      // Simuler l'effet progressif côté frontend pour l'UX
-      const content = postProcessMarkdown(data.content || "Aucun contenu généré");
-      const sections = content.split(/VERSET \d+/);
+      // Affichage progressif simulé avec le contenu complet
+      const fullContent = postProcessMarkdown(data.content || "Aucun contenu généré");
       
-      // Affichage progressif simulé
+      // Diviser par lignes pour affichage progressif
+      const lines = fullContent.split('\n');
       let accumulated = "";
-      const totalSections = sections.length;
+      let versetCount = 0;
+      let totalVersets = (fullContent.match(/VERSET \d+/g) || []).length;
       
-      // Ajouter l'introduction
-      if (sections[0]) {
-        accumulated += sections[0];
-        setContent(formatContent(accumulated));
-        setProgressPercent(10);
-        setProgressiveStats({
-          processed: 0,
-          total: totalSections - 1,
-          current_batch: "Introduction",
-          speed: "Rapide ⚡"
-        });
-        await wait(300);
-      }
-
-      // Ajouter les versets progressivement
-      for (let i = 1; i < sections.length; i++) {
-        const versetSection = `VERSET ${i}${sections[i] || ""}`;
-        accumulated += versetSection;
+      setProgressiveStats({
+        processed: 0,
+        total: totalVersets,
+        current_batch: "Démarrage...",
+        speed: "Rapide ⚡"
+      });
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        accumulated += line + '\n';
+        
+        // Si on trouve un verset, on met à jour les stats
+        if (line.match(/^VERSET \d+/)) {
+          versetCount++;
+          setProgressiveStats({
+            processed: versetCount,
+            total: totalVersets,
+            current_batch: line.trim(),
+            speed: versetCount <= 3 ? "Rapide ⚡" : "Standard"
+          });
+        }
+        
+        // Mettre à jour le contenu affiché
         setContent(formatContent(accumulated));
         
-        const progress = Math.round(10 + (i / (totalSections - 1)) * 90);
+        // Calculer la progression
+        const progress = Math.round((i / lines.length) * 100);
         setProgressPercent(progress);
         
-        setProgressiveStats({
-          processed: i,
-          total: totalSections - 1,
-          current_batch: `Verset ${i}`,
-          speed: i <= 5 ? "Rapide ⚡" : "Standard"
-        });
-        
-        // Délai réduit pour les 5 premiers versets
-        await wait(i <= 5 ? 200 : 400);
+        // Délai adaptatif - plus rapide au début
+        if (versetCount <= 3) {
+          await wait(50); // Très rapide pour les 3 premiers
+        } else if (i % 3 === 0) { // Afficher par groupes de 3 lignes pour les suivants
+          await wait(150);
+        }
       }
 
       setRubriquesStatus(p => ({ ...p, 0: "completed" }));

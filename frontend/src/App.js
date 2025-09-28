@@ -17,7 +17,9 @@ const getBackendUrl = () => {
 
   const hostname = typeof window !== "undefined" ? window.location.hostname : "";
   if (hostname === "localhost" || hostname === "127.0.0.1") return "http://localhost:8001";
+  // (optionnel) si tu utilises encore preview.emergentagent.com
   if (hostname.includes("preview.emergentagent.com")) return `https://${hostname}`;
+  // fallback prod → Railway
   return "https://etude8-bible-api-production.up.railway.app";
 };
 
@@ -121,6 +123,7 @@ const BASE_RUBRIQUES = [
    Utilitaires fetch (fallbacks)
 ========================= */
 
+// mapping endpoints (nouveau → legacy)
 const ENDPOINTS = {
   verseProgressive: [
     "/generate-verse-by-verse-progressive",
@@ -179,11 +182,12 @@ async function smartPost(pathList, payload) {
 ========================= */
 
 function App() {
+  // États principaux
   const [selectedBook, setSelectedBook] = useState("--");
   const [selectedChapter, setSelectedChapter] = useState("--");
   const [selectedVerse, setSelectedVerse] = useState("--");
   const [selectedVersion, setSelectedVersion] = useState("LSG");
-  const [selectedLength, setSelectedLength] = useState(500);
+  const [selectedLength, setSelectedLength] = useState(500); // ← 500 par défaut
   const [activeRubrique, setActiveRubrique] = useState(0);
   const [content, setContent] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -191,12 +195,14 @@ function App() {
   const [currentTheme, setCurrentTheme] = useState(0);
   const [lastStudy, setLastStudy] = useState(null);
   const [progressPercent, setProgressPercent] = useState(0);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(""); // ← unique déclaration
 
+  // États génération progressive
   const [isProgressiveLoading, setIsProgressiveLoading] = useState(false);
   const [currentBatchVerse, setCurrentBatchVerse] = useState(1);
   const [progressiveStats, setProgressiveStats] = useState(null);
 
+  // Thèmes (inchangé)
   const colorThemes = [
     { name: "Violet Mystique", primary: "#667eea", secondary: "#764ba2", accent: "#667eea",
       background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
@@ -236,12 +242,14 @@ function App() {
       headerBg: "linear-gradient(90deg, #701a75 0%, #e879f9 50%, #f5d0fe 100%)" },
   ];
 
+  // Options de chapitres
   const availableChapters = useMemo(() => {
     if (selectedBook === "--" || !BOOK_CHAPTERS[selectedBook]) return ["--"];
     const max = BOOK_CHAPTERS[selectedBook] || 1;
     return ["--", ...Array.from({ length: max }, (_, i) => i + 1)];
   }, [selectedBook]);
 
+  // Charger/sauver dernière étude
   useEffect(() => {
     const saved = localStorage.getItem("lastBibleStudy");
     if (saved) { try { setLastStudy(JSON.parse(saved)); } catch(e){ console.error(e);} }
@@ -250,6 +258,7 @@ function App() {
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, []);
 
+  // Appliquer thème au chargement
   useEffect(() => {
     setTimeout(() => { changePalette(); setCurrentTheme(0); }, 100);
   }, []);
@@ -302,8 +311,17 @@ function App() {
 
   const handleVerseChange = (e) => setSelectedVerse(e.target.value);
   const handleVersionChange = (e) => setSelectedVersion(e.target.value);
-  const handleLengthChange = (e) => setSelectedLength(Number(e.target.value));
 
+  // Map de longueurs visibles → payload backend
+  const LENGTH_OPTIONS = [500, 1500, 2500];
+  const handleLengthChange = (e) => {
+    const val = Number(e.target.value);
+    if (val <= 500) setSelectedLength(500);
+    else if (val <= 1500) setSelectedLength(1500);
+    else setSelectedLength(2500);
+  };
+
+  // Recherche intelligente
   const parseSearchQuery = (query) => {
     if (!query.trim()) return null;
     const normalized = query.trim();
@@ -337,6 +355,7 @@ function App() {
     }
   };
 
+  // Progress bar
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const animateProgress = async (duration = 3000) => {
     setProgressPercent(0);
@@ -344,6 +363,7 @@ function App() {
     for (let i = 0; i <= steps; i++) { setProgressPercent(i); await wait(step); }
   };
 
+  // YouVersion
   const openYouVersion = () => {
     if (selectedBook === "--") return alert("Veuillez d'abord sélectionner un livre de la Bible");
     const bookCodes = {"Genèse":"GEN","Exode":"EXO","Lévitique":"LEV","Nombres":"NUM","Deutéronome":"DEU","Josué":"JOS","Juges":"JDG","Ruth":"RUT","1 Samuel":"1SA","2 Samuel":"2SA","1 Rois":"1KI","2 Rois":"2KI","1 Chroniques":"1CH","2 Chroniques":"2CH","Esdras":"EZR","Néhémie":"NEH","Esther":"EST","Job":"JOB","Psaumes":"PSA","Proverbes":"PRO","Ecclésiaste":"ECC","Cantique des cantiques":"SNG","Ésaïe":"ISA","Jérémie":"JER","Lamentations":"LAM","Ézéchiel":"EZK","Daniel":"DAN","Osée":"HOS","Joël":"JOL","Amos":"AMO","Abdias":"OBA","Jonas":"JON","Michée":"MIC","Nahum":"NAM","Habacuc":"HAB","Sophonie":"ZEP","Aggée":"HAG","Zacharie":"ZEC","Malachie":"MAL","Matthieu":"MAT","Marc":"MRK","Luc":"LUK","Jean":"JHN","Actes":"ACT","Romains":"ROM","1 Corinthiens":"1CO","2 Corinthiens":"2CO","Galates":"GAL","Éphésiens":"EPH","Philippiens":"PHP","Colossiens":"COL","1 Thessaloniciens":"1TH","2 Thessaloniciens":"2TH","1 Timothée":"1TI","2 Timothée":"2TI","Tite":"TIT","Philémon":"PHM","Hébreux":"HEB","Jacques":"JAS","1 Pierre":"1PE","2 Pierre":"2PE","1 Jean":"1JN","2 Jean":"2JN","3 Jean":"3JN","Jude":"JUD","Apocalypse":"REV"};
@@ -434,13 +454,16 @@ function App() {
         ? `${selectedBook} ${selectedChapter}`
         : `${selectedBook} ${selectedChapter}:${selectedVerse}`;
 
+      // Envoi enrichi côté backend + cible de longueur
       const { data, url } = await smartPost(ENDPOINTS.verse, { 
-        passage, 
-        version: selectedVersion 
+        passage,
+        version: selectedVersion,
+        enriched: true,
+        target_chars: selectedLength
       });
       console.log("[API OK]", url);
 
-      // ⚠️ Utiliser le RAW pour détecter précisément les lignes "VERSET n"
+      // Utiliser le RAW pour détecter précisément les lignes "VERSET n"
       const rawContent = data.content || "Aucun contenu généré";
       const totalVersets = (rawContent.match(/^VERSET\s+\d+\s*$/gm) || []).length;
 
@@ -469,7 +492,7 @@ function App() {
           });
         }
 
-        // On post-process pour le style (labels) mais on NE MODIFIE PAS les titres "VERSET"
+        // Post-process (labels) sans altérer les lignes VERSET
         const styled = postProcessMarkdown(accumulatedRaw);
         setContent(formatContent(styled));
 
@@ -477,9 +500,9 @@ function App() {
         setProgressPercent(progress);
 
         if (versetCount <= 3) {
-          await wait(50);
+          await wait(50); // rapide pour les 3 premiers
         } else if (i % 3 === 0) {
-          await wait(150);
+          await wait(150); // groupé ensuite
         }
       }
 
@@ -508,8 +531,8 @@ function App() {
 
       const pathList = activeRubrique === 0 ? ENDPOINTS.verseGemini : ENDPOINTS.studyGemini;
       const payload = activeRubrique === 0
-        ? { passage, version: selectedVersion, requestedRubriques: [0], enriched: true }
-        : { passage, version: selectedVersion, requestedRubriques: [activeRubrique], enriched: true };
+        ? { passage, version: selectedVersion, requestedRubriques: [0], enriched: true, target_chars: selectedLength }
+        : { passage, version: selectedVersion, requestedRubriques: [activeRubrique], enriched: true, target_chars: selectedLength };
 
       const { data, url } = await smartPost(pathList, payload);
       console.log("[API OK]", url);
@@ -536,7 +559,11 @@ function App() {
         : `${selectedBook} ${selectedChapter}:${selectedVerse}`;
 
       const { data, url } = await smartPost(ENDPOINTS.study, {
-        passage, version: selectedVersion, tokens: selectedLength, enriched: true
+        passage,
+        version: selectedVersion,
+        tokens: selectedLength,
+        enriched: true,
+        target_chars: selectedLength
       });
       console.log("[API OK]", url);
 
@@ -556,18 +583,16 @@ function App() {
 
   const formatContent = (text) => {
     if (!text) return "";
+    
+    // Formatage simple et efficace pour tous les types de contenu
     return text
-      // gras markdown
       .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-      // titres markdown
       .replace(/^\# (.*$)/gim, "<h1>$1</h1>")
       .replace(/^\## (.*$)/gim, "<h2>$1</h2>")
       .replace(/^\### (.*$)/gim, "<h3>$1</h3>")
-      // titres de sections backend
       .replace(/^VERSET\s+(\d+)\s*$/gim, "<h2 class='verset-header'>📖 VERSET $1</h2>")
       .replace(/^TEXTE BIBLIQUE\s*:$/gim, "<h4 class='texte-biblique-label'>📜 TEXTE BIBLIQUE :</h4>")
       .replace(/^EXPLICATION THÉOLOGIQUE\s*:$/gim, "<h4 class='explication-label'>🎓 EXPLICATION THÉOLOGIQUE :</h4>")
-      // paragraphes : conserver les blocs séparés par double saut de ligne
       .split("\n\n")
       .map(p => (p.trim() ? `<p>${p.replace(/\n/g, "<br>")}</p>` : ""))
       .join("");
@@ -625,12 +650,14 @@ function App() {
 
   return (
     <div className="App">
+      {/* Header avec texte défilant */}
       <header className="header-banner">
         <div className="scroll-text">
           ✨ MÉDITATION BIBLIQUE ✨ ÉTUDE SPIRITUELLE ✨ SAGESSE DIVINE ✨ MÉDITATION THÉOLOGIQUE ✨ CONTEMPLATION SACRÉE ✨ RÉFLEXION INSPIRÉE ✨
         </div>
       </header>
 
+      {/* Indicateur de progression centré */}
       <div className="progress-container">
         <div className="progress-pill">
           {progressPercent}%
@@ -642,7 +669,9 @@ function App() {
         </div>
       </div>
 
+      {/* Interface principale */}
       <div className="main-container">
+        {/* Section de recherche */}
         <div className="search-section">
           <div className="search-input">
             <input
@@ -660,11 +689,13 @@ function App() {
             <button className="btn-validate" disabled={isLoading}>Valider</button>
             <SelectPill label="Verset" value={selectedVerse} options={["--", ...Array.from({ length: 50 }, (_, i) => i + 1)]} onChange={handleVerseChange} />
             <SelectPill label="Version" value={selectedVersion} options={["LSG", "Darby", "NEG"]} onChange={handleVersionChange} />
-            <SelectPill label="Longueur" value={selectedLength} options={[300, 500, 1000, 2000]} onChange={handleLengthChange} />
+            {/* Longueur contrôlée : 500 / 1500 / 2500 */}
+            <SelectPill label="Longueur" value={selectedLength} options={LENGTH_OPTIONS} onChange={handleLengthChange} />
             <button className="btn-read" onClick={openYouVersion}>Lire la Bible</button>
             <button className="btn-chat">ChatGPT</button>
           </div>
 
+          {/* Boutons d'action */}
           <div className="action-buttons">
             <button className="btn-reset" onClick={handleReset}>🔄 Reset</button>
             <button className="btn-palette" onClick={changePalette}>🎨 {colorThemes[currentTheme].name}</button>
@@ -678,12 +709,15 @@ function App() {
           </div>
         </div>
 
+        {/* Layout 2 colonnes */}
         <div className="three-column-layout" style={{ gridTemplateColumns: "300px 1fr" }}>
+          {/* Colonne gauche - Rubriques */}
           <div className="left-column">
             <h3>Rubriques (29)</h3>
             <RubriquesInline items={rubriquesItems} activeId={activeRubrique} onSelect={handleRubriqueSelect} rubriquesStatus={rubriquesStatus} />
           </div>
 
+          {/* Colonne centrale - Contenu */}
           <div className="center-column">
             <div className="content-header">
               <h2>{`${activeRubrique}. ${getRubTitle(activeRubrique)}`}</h2>

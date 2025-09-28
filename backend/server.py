@@ -1,11 +1,8 @@
-
-# backend/server.py
-# API Bible Study (Darby) — avec contenu détaillé verset par verset et explications théologiques automatiques
-# Corrections clés :
-# - Désactive le mode "tests tronqués" par défaut (activable via DEBUG_VERSES=true)
-# - Trie les IDs de versets par numéro (ordre 1..N garanti)
-# - Conserve un verset par ligne pour les chapitres entiers (route non-progressive)
-# - Parse le numéro réel de verset (pas d'enumerate piégeux)
+# server.py (root)
+# Bible Study API (Darby) — corrected
+# - Keeps verse order (sorted IDs)
+# - Preserves one-verse-per-line for full chapters (non-progressive route)
+# - Adds `/health` endpoint for Railway health checks + `/api/health`
 
 import os
 import re
@@ -18,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-# ==== Chargement env ====
+# ==== Env ====
 load_dotenv()
 
 API_BASE = "https://api.scripture.api.bible/v1"
@@ -28,7 +25,7 @@ PREFERRED_BIBLE_ID = os.getenv("BIBLE_ID", "a93a92589195411f-01")  # Darby FR
 EMERGENT_LLM_KEY = os.getenv("EMERGENT_LLM_KEY")
 DEBUG_VERSES = os.getenv("DEBUG_VERSES", "false").lower() == "true"
 
-# ==== Bibliothèque locale optionnelle ====
+# ==== Local library (optional) ====
 try:
     from verse_by_verse_content import (
         get_verse_by_verse_content as vlib_chapter_dict,
@@ -42,7 +39,7 @@ except Exception as e:
     def vlib_chapter_dict(book, chapter): return {}
     def vlib_all_verses(book, chapter): return []
 
-# ==== Gemini (optionnel) ====
+# ==== Gemini (optional) ====
 import google.generativeai as genai
 try:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -72,18 +69,18 @@ ALLOW_ORIGINS = _default_origins + _extra
 app = FastAPI(title="FastAPI", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOW_ORIGINS if _extra else ["*"],  # large en phase de test
+    allow_origins=ALLOW_ORIGINS if _extra else ["*"],  # wide open during tests
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # =========================
-#      SCHEMAS
+#      Schemas
 # =========================
 class StudyRequest(BaseModel):
     passage: str = Field(..., description="Ex: 'Nombres 2' ou 'Jean 3'")
-    version: str = Field("", description="Ignoré (api.bible gère par bibleId).")
+    version: str = Field("", description="Ignoré (api.bible).")
     tokens: int = Field(0, description="Ignoré (hérité du front).")
     model: str = Field("", description="Ignoré (hérité du front).")
     enriched: bool = Field(False, description="Mode enrichi avec Gemini")
@@ -118,52 +115,45 @@ def _norm(s: str) -> str:
     return s
 
 def format_theological_content(content: str) -> str:
-    """Formate le contenu théologique : retire les ** et nettoie."""
+    """Retire les ** et nettoie les espaces (mais laisse les sauts de ligne de structure)."""
     content = re.sub(r'\*\*(.*?)\*\*', r'\1', content)
     content = content.replace('**', '').replace('*', '')
+    # On ne touche pas aux sauts de ligne ici
     content = re.sub(r'[ ]+', ' ', content)
     return content.strip()
 
 def clean_plain_text(s: str) -> str:
+    # NE PAS supprimer les sauts de ligne ici — utilisé seulement pour verset unique.
     s = s.replace("**", "").replace("*", "")
     s = re.sub(r"\s+", " ", s)
     return s.strip()
 
 BOOKS_FR_OSIS: Dict[str, str] = {
-    # Pentateuque
     "genese": "GEN", "gen": "GEN",
     "exode": "EXO", "exo": "EXO",
     "levitique": "LEV", "lev": "LEV",
     "nombres": "NUM", "nom": "NUM", "nbr": "NUM", "nb": "NUM",
     "deuteronome": "DEU", "deut": "DEU", "dt": "DEU",
-    # Historiques
     "josue": "JOS", "juges": "JDG", "ruth": "RUT",
     "1 samuel": "1SA", "2 samuel": "2SA",
     "1 rois": "1KI", "2 rois": "2KI",
     "1 chroniques": "1CH", "2 chroniques": "2CH",
     "esdras": "EZR", "nehemie": "NEH", "esther": "EST",
-    # Poétiques
-    "job": "JOB", "psaumes": "PSA", "psaume": "PSA", "ps": "PSA",
-    "proverbes": "PRO", "prov": "PRO",
+    "job": "JOB", "psaumes": "PSA", "proverbes": "PRO",
     "ecclesiaste": "ECC", "cantique des cantiques": "SNG", "cantique": "SNG",
-    # Prophètes majeurs
     "esaie": "ISA", "jeremie": "JER", "lamentations": "LAM",
     "ezechiel": "EZK", "daniel": "DAN",
-    # Prophètes mineurs
     "osee": "HOS", "joel": "JOL", "amos": "AMO", "abdi": "OBA",
     "jonas": "JON", "michee": "MIC", "nahum": "NAM", "habakuk": "HAB",
     "sophonie": "ZEP", "aggee": "HAG", "zacharie": "ZEC", "malachie": "MAL",
-    # Évangiles & Actes
     "matthieu": "MAT", "marc": "MRK", "luc": "LUK", "jean": "JHN",
     "actes": "ACT",
-    # Épîtres
     "romains": "ROM", "1 corinthiens": "1CO", "2 corinthiens": "2CO",
     "galates": "GAL", "ephesiens": "EPH", "philippiens": "PHP",
     "colossiens": "COL", "1 thessaloniciens": "1TH", "2 thessaloniciens": "2TH",
     "1 timothee": "1TI", "2 timothee": "2TI", "tite": "TIT", "philemon": "PHM",
     "hebreux": "HEB", "jacques": "JAS", "1 pierre": "1PE", "2 pierre": "2PE",
     "1 jean": "1JN", "2 jean": "2JN", "3 jean": "3JN", "jude": "JUD",
-    # Apocalypse
     "apocalypse": "REV", "apoc": "REV",
 }
 
@@ -189,7 +179,6 @@ async def get_bible_id() -> str:
     if PREFERRED_BIBLE_ID:
         _cached_bible_id = PREFERRED_BIBLE_ID
         return _cached_bible_id
-
     async with httpx.AsyncClient(timeout=20.0) as client:
         r = await client.get(f"{API_BASE}/bibles", headers=headers())
         if r.status_code != 200:
@@ -205,27 +194,23 @@ async def get_bible_id() -> str:
     return _cached_bible_id
 
 def _sort_verse_ids(ids: List[str]) -> List[str]:
-    """Trie des IDs de type GEN.1.3 par le dernier segment numérique."""
     try:
         return sorted(ids, key=lambda x: int(x.rsplit('.', 1)[-1]))
     except Exception:
         return ids
 
 async def list_verses_ids(bible_id: str, osis_book: str, chapter: int) -> List[str]:
-    # Mode débogage (facultatif) – par défaut désactivé
     if DEBUG_VERSES:
         if osis_book == "GEN" and chapter == 1:
             return [f"GEN.1.{i}" for i in range(1, 6)]
         if osis_book == "JHN" and chapter == 3:
             return [f"JHN.3.{i}" for i in range(16, 17)]
-
     try:
         chap_id = f"{osis_book}.{chapter}"
         url = f"{API_BASE}/bibles/{bible_id}/chapters/{chap_id}/verses"
         async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.get(url, headers=headers())
             if r.status_code != 200:
-                # Fallback : 31 versets max typiques
                 return [f"{osis_book}.{chapter}.{i}" for i in range(1, 32)]
             data = r.json()
             ids = [v["id"] for v in data.get("data", [])]
@@ -234,19 +219,17 @@ async def list_verses_ids(bible_id: str, osis_book: str, chapter: int) -> List[s
         return [f"{osis_book}.{chapter}.{i}" for i in range(1, 32)]
 
 async def fetch_verse_text(bible_id: str, verse_id: str) -> str:
-    # Petit cache test optionnel si DEBUG_VERSES activé
     if DEBUG_VERSES:
         test_verses = {
             "GEN.1.1": "Au commencement Dieu créa les cieux et la terre.",
-            "GEN.1.2": "La terre était désolation et vide; ...",
-            "GEN.1.3": "Dieu dit: Que la lumière soit! Et la lumière fut.",
-            "GEN.1.4": "Dieu vit que la lumière était bonne; ...",
-            "GEN.1.5": "Dieu appela la lumière Jour, ...",
-            "JHN.3.16": "Car Dieu a tant aimé le monde ..."
+            "GEN.1.2": "La terre était désolation et vide, ...",
+            "GEN.1.3": "Dieu dit : Que la lumière soit. Et la lumière fut.",
+            "GEN.1.4": "Dieu vit la lumière, qu’elle était bonne ; ...",
+            "GEN.1.5": "Dieu appela la lumière Jour ; ...",
+            "JHN.3.16": "Car Dieu a tant aimé le monde ...",
         }
         if verse_id in test_verses:
             return test_verses[verse_id]
-
     try:
         url = f"{API_BASE}/bibles/{bible_id}/verses/{verse_id}"
         params = {"content-type": "text"}
@@ -278,22 +261,14 @@ async def fetch_passage_text(bible_id: str, osis_book: str, chapter: int, verse:
         except Exception:
             vnum = None
         txt = await fetch_verse_text(bible_id, vid)
-        if vnum is not None:
-            parts.append(f"{vnum}. {txt}")
-        else:
-            parts.append(txt)
-    # NE PAS nettoyer les sauts de ligne ici : on veut 1 ligne = 1 verset
+        line = f"{vnum}. {txt}" if vnum is not None else txt
+        parts.append(line)
     return "\n".join(parts).strip()
 
 # =========================
 #   Parsing du passage
 # =========================
 def parse_passage_input_extended(p: str):
-    """
-    'Jean 3:1-5' -> ('Jean','JHN',3,(1,5))
-    'Jean 3:16'  -> ('Jean','JHN',3,16)
-    'Jean 3'     -> ('Jean','JHN',3,None)
-    """
     p = p.strip()
     m1 = re.match(r"^(.*?)\s+(\d+):(\d+)-(\d+)(?:\s+\S+.*)?$", p)
     if m1:
@@ -314,10 +289,6 @@ def parse_passage_input_extended(p: str):
     raise HTTPException(status_code=400, detail="Format passage invalide. Ex: 'Jean 3', 'Jean 3:16' ou 'Jean 3:1-5'.")
 
 def parse_passage_input(p: str):
-    """
-    'Genèse 1'    -> ('Genèse', 1, None)
-    'Genèse 1:3'  -> ('Genèse', 1, 3)
-    """
     p = p.strip()
     m = re.match(r"^(.*?)[\s,]+(\d+)(?::(\d+))?(?:\s+\S+.*)?$", p)
     if not m:
@@ -331,19 +302,17 @@ def parse_passage_input(p: str):
     return book, osis, chapter, verse
 
 # =========================
-#   Génération théologique (fallback simple si Gemini absent)
+#   Théologie (fallback simple)
 # =========================
 def generate_smart_fallback_explanation(verse_text: str, book: str, chap: int, vnum: int) -> str:
     low = verse_text.lower()
-    explanations = []
-    explanations.append(f"ANALYSE TEXTUELLE DE {book} {chap}:{vnum}")
+    out = [f"ANALYSE TEXTUELLE DE {book} {chap}:{vnum}"]
     if any(w in low for w in ["lumière", "yehi", "אור"]):
-        explanations.append("La formule 'yehi or' révèle l'efficacité de la Parole créatrice.")
-    explanations.append("Ce passage s'inscrit dans l'économie révélationnelle et la lecture christocentrique.")
-    return " ".join(explanations)
+        out.append("La formule 'yehi or' révèle l'efficacité de la Parole créatrice.")
+    out.append("Ce passage s'inscrit dans l'économie révélationnelle et la lecture christocentrique.")
+    return " ".join(out)
 
 async def generate_enriched_theological_explanation(verse_text: str, book: str, chap: int, vnum: int, enriched: bool = True) -> str:
-    # Gemini indisponible => fallback local robuste
     return generate_smart_fallback_explanation(verse_text, book, chap, vnum)
 
 # =========================
@@ -353,6 +322,24 @@ async def generate_enriched_theological_explanation(verse_text: str, book: str, 
 def root():
     return {"message": APP_NAME, "status": "Railway deployment successful"}
 
+# Health for Railway
+@app.get("/health")
+async def health_plain():
+    try:
+        bid = await get_bible_id()
+    except Exception:
+        bid = None
+    return {"status": "ok", "bibleId": bid or "unknown", "gemini": GEMINI_AVAILABLE, "path": "/health"}
+
+# Health (API namespace too)
+@app.get("/api/health")
+async def health_api():
+    try:
+        bid = await get_bible_id()
+    except Exception:
+        bid = None
+    return {"status": "ok", "bibleId": bid or "unknown", "gemini": GEMINI_AVAILABLE, "path": "/api/health"}
+
 @app.get("/api/")
 def api_root():
     return {"message": APP_NAME}
@@ -360,15 +347,6 @@ def api_root():
 @app.get("/api/test")
 async def test_connection():
     return {"status": "Backend accessible", "message": "Connexion OK"}
-
-@app.get("/api/health")
-async def health():
-    bid = None
-    try:
-        bid = await get_bible_id()
-    except Exception:
-        pass
-    return {"status": "ok", "bibleId": bid or "unknown", "gemini": GEMINI_AVAILABLE}
 
 # ---- Progressif
 @app.post("/api/generate-verse-by-verse-progressive", response_model=ProgressiveStudyResponse)
@@ -378,7 +356,6 @@ async def generate_verse_by_verse_progressive(request: ProgressiveStudyRequest):
         batch_size = max(1, min(request.batch_size, 10))
         if not passage:
             raise HTTPException(status_code=400, detail="Passage requis")
-
         book_label, osis, chap, verse_info = parse_passage_input_extended(passage)
         bible_id = await get_bible_id()
 
@@ -414,11 +391,7 @@ async def generate_verse_by_verse_progressive(request: ProgressiveStudyRequest):
         verses_completed = batch_end - start_verse_orig + 1
         total_progress = min((verses_completed / total_verses) * 100, 100)
 
-        verse_stats = {
-            "processed": verses_completed,
-            "total": total_verses,
-            "remaining": max(0, total_verses - verses_completed)
-        }
+        verse_stats = {"processed": verses_completed, "total": total_verses, "remaining": max(0, total_verses - verses_completed)}
 
         return ProgressiveStudyResponse(
             batch_content=batch_content,
@@ -431,7 +404,7 @@ async def generate_verse_by_verse_progressive(request: ProgressiveStudyRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur lors de la génération: {str(e)}")
 
-# ---- Verset par verset (non progressif)
+# ---- Non progressif
 @app.post("/api/generate-verse-by-verse")
 async def generate_verse_by_verse(request: StudyRequest):
     try:
@@ -459,8 +432,8 @@ async def generate_verse_by_verse(request: StudyRequest):
             )
             return {"content": format_theological_content(content)}
 
-        # Chapitre entier : parser ligne par ligne (1 ligne = 1 verset)
         blocks: List[str] = [f"{title}\n\n{intro}"]
+        # Grâce au fetch_passage_text, on a "1 ligne = 1 verset"
         lines = [l for l in text.splitlines() if l.strip()]
         for line in lines:
             m = re.match(r"^(\d+)\.\s*(.*)$", line)
@@ -478,7 +451,7 @@ async def generate_verse_by_verse(request: StudyRequest):
     except Exception as e:
         return {"content": f"Erreur lors de la génération: {str(e)}"}
 
-# ---- Étude 28 rubriques (inchangé fonctionnellement)
+# ---- Étude 28 rubriques (simplifiée)
 RUBRIQUES_28 = [
     "Prière d'ouverture","Structure littéraire","Questions du chapitre précédent","Thème doctrinal",
     "Fondements théologiques","Contexte historique","Contexte culturel","Contexte géographique",
@@ -499,22 +472,23 @@ def generate_intelligent_rubric_content(rubric_num: int, book_name: str, chapter
     }.get(rubric_num, f"Contenu contextualisé pour {book_name} {chapter}.")
     return f"## {rubric_num}. {rubric_name}\n\n{base}"
 
+@app.get("/api/")
+def api_root_index():
+    return {"message": APP_NAME}
+
 @app.post("/api/generate-study")
 async def generate_study(request: StudyRequest):
     try:
         passage = request.passage.strip()
         if not passage:
             raise HTTPException(status_code=400, detail="Passage requis")
-
         book_label, osis, chap, _ = parse_passage_input(passage)
         bible_id = await get_bible_id()
         text = await fetch_passage_text(bible_id, osis, chap, None)
-
         requested_indices = request.requestedRubriques or list(range(len(RUBRIQUES_28)))
         header = f"# Étude Intelligente en 28 points — {book_label} {chap} (Darby)\n"
         intro = "Étude enrichie (contenu local)"
         excerpt = "\n".join([l for l in text.splitlines()[:8]])
-
         body: List[str] = [header, "## 📖 Extrait du texte (Darby)\n" + excerpt, intro, "---"]
         for i, rubric_idx in enumerate(requested_indices):
             body.append(generate_intelligent_rubric_content(rubric_idx + 1, book_label, chap, text))
@@ -522,7 +496,7 @@ async def generate_study(request: StudyRequest):
     except Exception as e:
         return {"content": f"Erreur lors de la génération: {str(e)}"}
 
-# ---- Lancement local
+# ---- Run local
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8000"))

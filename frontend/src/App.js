@@ -52,8 +52,9 @@ function formatVerseByVerseContent(rawText) {
 
   const text = postProcessLabels(rawText);
 
-  // On coupe sur chaque "VERSET n" en conservant les numéros
-  const sections = text.split(/(?m)^VERSET\s+(\d+)\s*$/);
+  // IMPORTANT: en JS on met les flags après le /, pas (?m)
+  // On coupe sur chaque "VERSET n" en conservant les numéros capturés
+  const sections = text.split(/^VERSET\s+(\d+)\s*$/gm);
   // sections = [intro, num1, bloc1, num2, bloc2, ...]
 
   let html = '<div class="verse-study-container">';
@@ -72,7 +73,6 @@ function formatVerseByVerseContent(rawText) {
   for (let i = 1; i < sections.length; i += 2) {
     const verseNumber = sections[i];
     const block = (sections[i + 1] || "").trim();
-
     if (!verseNumber) continue;
 
     html += `
@@ -81,13 +81,12 @@ function formatVerseByVerseContent(rawText) {
     `;
 
     // Découpe interne: TEXTE BIBLIQUE / EXPLICATION THÉOLOGIQUE
-    const parts = block.split(/(?m)^TEXTE BIBLIQUE\s*:\s*$/);
-    if (parts.length > 1) {
-      const afterBiblical = parts[1].split(/(?m)^EXPLICATION THÉOLOGIQUE\s*:\s*$/);
+    const tbSplit = block.split(/^TEXTE BIBLIQUE\s*:\s*$/m);
+    if (tbSplit.length > 1) {
+      const afterBiblical = tbSplit[1].split(/^EXPLICATION THÉOLOGIQUE\s*:\s*$/m);
       const biblicalText = (afterBiblical[0] || "").trim();
       const theologicalExplanation = (afterBiblical[1] || "").trim();
 
-      // Labels stylés
       html += `
         <div class="section-label biblical-label">📜 TEXTE BIBLIQUE :</div>
         <div class="biblical-text">${biblicalText.replace(/\n/g, "<br>")}</div>
@@ -274,7 +273,7 @@ export default function App() {
         <div className="search-section">
           <div className="controls-row">
             <SelectPill label="Livre" value={selectedBook} options={BOOKS} onChange={(e)=>setSelectedBook(e.target.value)} />
-            <SelectPill label="Chapitre" value={selectedChapter} options={availableChapters} onChange={(e)=>setSelectedChapter(Number(e.target.value))} />
+            <SelectPill label="Chapitre" value={selectedChapter} options={["--", ...Array.from({length: BOOK_CHAPTERS[selectedBook]||1}, (_,i)=>i+1)]} onChange={(e)=>setSelectedChapter(Number(e.target.value))} />
             <SelectPill label="Verset" value={selectedVerse} options={["--", ...Array.from({ length: 50 }, (_, i) => i + 1)]} onChange={(e)=>setSelectedVerse(e.target.value)} />
             <SelectPill label="Version" value={selectedVersion} options={["LSG","Darby","NEG"]} onChange={(e)=>setSelectedVersion(e.target.value)} />
             <SelectPill label="Longueur" value={selectedLength} options={LENGTH_OPTIONS} onChange={handleLengthChange} />

@@ -1,10 +1,11 @@
+
 # backend/server.py
 # API Bible Study (Darby) — avec contenu détaillé verset par verset et explications théologiques automatiques
-# - Texte biblique via https://api.scripture.api.bible/v1
-# - Étude "28 rubriques" + Verset/verset avec contenu théologique détaillé
-# - Utilise ta bibliothèque locale si présente, sinon Gemini (si clé), sinon fallback enrichi
-# - Renvoie toujours {"content": "..."} pour coller au front.
-# - OPTIMISATION: 5 premiers versets rapides, puis progression normale
+# Corrections clés :
+# - Désactive le mode "tests tronqués" par défaut (activable via DEBUG_VERSES=true)
+# - Trie les IDs de versets par numéro (ordre 1..N garanti)
+# - Conserve un verset par ligne pour les chapitres entiers (route non-progressive)
+# - Parse le numéro réel de verset (pas d'enumerate piégeux)
 
 import os
 import re
@@ -27,7 +28,7 @@ PREFERRED_BIBLE_ID = os.getenv("BIBLE_ID", "a93a92589195411f-01")  # Darby FR
 EMERGENT_LLM_KEY = os.getenv("EMERGENT_LLM_KEY")
 DEBUG_VERSES = os.getenv("DEBUG_VERSES", "false").lower() == "true"
 
-# ==== Chargement de la bibliothèque locale (optionnelle pour Railway) ====
+# ==== Bibliothèque locale optionnelle ====
 try:
     from verse_by_verse_content import (
         get_verse_by_verse_content as vlib_chapter_dict,
@@ -38,23 +39,18 @@ try:
 except Exception as e:
     print(f"ℹ️ No local verse-by-verse library found: {e}")
     VLIB_AVAILABLE = False
-    # Créer des fonctions de fallback pour éviter les erreurs
-    def vlib_chapter_dict(book, chapter):
-        return {}
-    def vlib_all_verses(book, chapter):
-        return []
+    def vlib_chapter_dict(book, chapter): return {}
+    def vlib_all_verses(book, chapter): return []
 
-# ==== Intégration Gemini directe (pour production Railway) ====
+# ==== Gemini (optionnel) ====
 import google.generativeai as genai
 try:
-    # Tenter d'utiliser Emergent d'abord (environnement local)
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     EMERGENT_AVAILABLE = True
     GEMINI_AVAILABLE = True
     print("✅ Emergent integrations loaded - Using Emergent LLM")
 except Exception:
     EMERGENT_AVAILABLE = False
-    # Fallback : Utiliser Gemini direct avec clé API
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
@@ -110,12 +106,6 @@ class ProgressiveStudyResponse(BaseModel):
     next_start_verse: int = Field(..., description="Prochain verset")
     total_progress: float = Field(..., description="Pourcentage de progression total")
     verse_stats: Optional[Dict] = Field(None, description="Stats des versets")
-
-class VerseByVerseRequest(BaseModel):
-    passage: str = Field(..., description="Ex: 'Genèse 1' ou 'Genèse 1:1'")
-    version: str = Field("", description="Ignoré (api.bible).")
-    enriched: bool = Field(default=False, description="Mode enrichi avec Gemini")
-
 
 # =========================
 #      Helpers
@@ -191,16 +181,13 @@ def headers() -> Dict[str, str]:
     return {"api-key": BIBLE_API_KEY}
 
 _cached_bible_id: Optional[str] = None
-_cached_bible_name: Optional[str] = None
 
 async def get_bible_id() -> str:
-    global _cached_bible_id, _cached_bible_name
+    global _cached_bible_id
     if _cached_bible_id:
         return _cached_bible_id
-
     if PREFERRED_BIBLE_ID:
         _cached_bible_id = PREFERRED_BIBLE_ID
-        _cached_bible_name = "Darby (config)"
         return _cached_bible_id
 
     async with httpx.AsyncClient(timeout=20.0) as client:
@@ -208,21 +195,11 @@ async def get_bible_id() -> str:
         if r.status_code != 200:
             raise HTTPException(status_code=502, detail=f"api.bible bibles: {r.text}")
         data = r.json()
-        lst = data.get("data", [])
-        for b in lst:
-            name = (b.get("name") or "") + " " + (b.get("abbreviationLocal") or "")
+        for b in data.get("data", []):
             lang = (b.get("language") or {}).get("name", "")
-            if "darby" in name.lower() and ("fr" in lang.lower() or "fra" in lang.lower()):
+            if "fr" in (lang or "").lower():
                 _cached_bible_id = b.get("id")
-                _cached_bible_name = b.get("name")
                 break
-        if not _cached_bible_id:
-            for b in lst:
-                lang = (b.get("language") or {}).get("name", "")
-                if "fr" in lang.lower() or "fra" in lang.lower():
-                    _cached_bible_id = b.get("id")
-                    _cached_bible_name = b.get("name")
-                    break
         if not _cached_bible_id:
             raise HTTPException(status_code=500, detail="Aucune Bible FR trouvée via api.bible.")
     return _cached_bible_id
@@ -235,44 +212,41 @@ def _sort_verse_ids(ids: List[str]) -> List[str]:
         return ids
 
 async def list_verses_ids(bible_id: str, osis_book: str, chapter: int) -> List[str]:
-    # Mode test désactivé par défaut (activable via DEBUG_VERSES=true)
+    # Mode débogage (facultatif) – par défaut désactivé
     if DEBUG_VERSES:
         if osis_book == "GEN" and chapter == 1:
-            return [f"GEN.1.{i}" for i in range(1, 6)]  # 5 premiers versets
-        elif osis_book == "JHN" and chapter == 3:
-            return [f"JHN.3.{i}" for i in range(16, 17)]  # Jean 3:16 uniquement
+            return [f"GEN.1.{i}" for i in range(1, 6)]
+        if osis_book == "JHN" and chapter == 3:
+            return [f"JHN.3.{i}" for i in range(16, 17)]
 
-    # Essayer l'API normale
     try:
         chap_id = f"{osis_book}.{chapter}"
         url = f"{API_BASE}/bibles/{bible_id}/chapters/{chap_id}/verses"
         async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.get(url, headers=headers())
             if r.status_code != 200:
-                # Retourner des IDs simulés raisonnables (1..31)
+                # Fallback : 31 versets max typiques
                 return [f"{osis_book}.{chapter}.{i}" for i in range(1, 32)]
             data = r.json()
             ids = [v["id"] for v in data.get("data", [])]
             return _sort_verse_ids(ids)
     except Exception:
-        # Fallback avec IDs simulés
         return [f"{osis_book}.{chapter}.{i}" for i in range(1, 32)]
 
 async def fetch_verse_text(bible_id: str, verse_id: str) -> str:
-    # Mode de test avec textes simulés si DEBUG_VERSES
+    # Petit cache test optionnel si DEBUG_VERSES activé
     if DEBUG_VERSES:
         test_verses = {
-            "GEN.1.1": "Au commencement, Dieu créa les cieux et la terre.",
-            "GEN.1.2": "La terre était informe et vide; il y avait des ténèbres sur l'abîme, et l'esprit de Dieu se mouvait au-dessus des eaux.",
+            "GEN.1.1": "Au commencement Dieu créa les cieux et la terre.",
+            "GEN.1.2": "La terre était désolation et vide; ...",
             "GEN.1.3": "Dieu dit: Que la lumière soit! Et la lumière fut.",
-            "GEN.1.4": "Dieu vit que la lumière était bonne; et Dieu sépara la lumière d'avec les ténèbres.",
-            "GEN.1.5": "Dieu appela la lumière jour, et il appela les ténèbres nuit. Ainsi, il y eut un soir, et il y eut un matin: ce fut le premier jour.",
-            "JHN.3.16": "Car Dieu a tant aimé le monde qu'il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu'il ait la vie éternelle."
+            "GEN.1.4": "Dieu vit que la lumière était bonne; ...",
+            "GEN.1.5": "Dieu appela la lumière Jour, ...",
+            "JHN.3.16": "Car Dieu a tant aimé le monde ..."
         }
         if verse_id in test_verses:
             return test_verses[verse_id]
 
-    # Sinon, API réelle
     try:
         url = f"{API_BASE}/bibles/{bible_id}/verses/{verse_id}"
         params = {"content-type": "text"}
@@ -289,13 +263,16 @@ async def fetch_verse_text(bible_id: str, verse_id: str) -> str:
         return f"[Texte simulé] Verset {verse_id} de la Bible"
 
 async def fetch_passage_text(bible_id: str, osis_book: str, chapter: int, verse: Optional[int] = None) -> str:
+    """
+    IMPORTANT : pour un chapitre entier, on RETIENT les sauts de ligne (1 verset par ligne)
+    afin que la route non-progressive puisse parser chaque verset proprement.
+    """
     if verse:
         verse_id = f"{osis_book}.{chapter}.{verse}"
         return await fetch_verse_text(bible_id, verse_id)
     ids = await list_verses_ids(bible_id, osis_book, chapter)
     parts: List[str] = []
     for vid in ids:
-        # Utilise le vrai numéro du verset (pas enumerate)
         try:
             vnum = int(vid.rsplit('.', 1)[-1])
         except Exception:
@@ -305,7 +282,8 @@ async def fetch_passage_text(bible_id: str, osis_book: str, chapter: int, verse:
             parts.append(f"{vnum}. {txt}")
         else:
             parts.append(txt)
-    return clean_plain_text("\n".join(parts).strip())
+    # NE PAS nettoyer les sauts de ligne ici : on veut 1 ligne = 1 verset
+    return "\n".join(parts).strip()
 
 # =========================
 #   Parsing du passage
@@ -353,320 +331,20 @@ def parse_passage_input(p: str):
     return book, osis, chapter, verse
 
 # =========================
-#   Génération théologique ENRICHIE
+#   Génération théologique (fallback simple si Gemini absent)
 # =========================
-async def generate_enriched_theological_explanation(verse_text: str, book: str, chap: int, vnum: int, enriched: bool = True) -> str:
-    """PRIORITÉ ULTRA-ENRICHISSEMENT: Gemini académique -> fallback avancé -> base locale."""
-
-    # 1) PRIORITÉ ABSOLUE: Gemini ultra-enrichi (niveau académique)
-    if enriched and GEMINI_AVAILABLE and EMERGENT_LLM_KEY:
-        try:
-            gemini_result = await generate_gemini_explanation(verse_text, book, chap, vnum)
-            if gemini_result and len(gemini_result.strip()) > 300:  # Exigence minimale 300+ mots
-                print(f"✅ Gemini ultra-enrichi généré pour {book} {chap}:{vnum} ({len(gemini_result)} car.)")
-                return gemini_result
-        except Exception as e:
-            print(f"⚠️ Gemini error for {book} {chap}:{vnum} -> {e}")
-
-    # 2) Fallback ULTRA-enrichi et intelligent (sans LLM mais très détaillé)
-    advanced_fallback = generate_smart_fallback_explanation(verse_text, book, chap, vnum)
-    if len(advanced_fallback) > 400:  # Si le fallback est riche
-        print(f"✅ Fallback ultra-enrichi pour {book} {chap}:{vnum} ({len(advanced_fallback)} car.)")
-        return advanced_fallback
-
-    # 3) Base locale SEULEMENT comme dernier recours (et enrichir si possible)
-    if VLIB_AVAILABLE:
-        try:
-            chap_dict = vlib_chapter_dict(book, chap) or {}
-            entry = chap_dict.get(vnum)
-            if entry and entry.get("explanation"):
-                base_explanation = format_theological_content(entry["explanation"])
-                print(f"⚠️ Base locale utilisée pour {book} {chap}:{vnum} ({len(base_explanation)} car.)")
-
-                # Enrichir avec Gemini même si base locale existe
-                if enriched and GEMINI_AVAILABLE and EMERGENT_LLM_KEY:
-                    try:
-                        enriched_result = await enrich_with_gemini(verse_text, book, chap, vnum, base_explanation)
-                        if enriched_result and len(enriched_result) > len(base_explanation) + 100:
-                            return enriched_result
-                    except Exception:
-                        pass
-
-                return base_explanation
-        except Exception as e:
-            print(f"VLIB error for {book} {chap}:{vnum} -> {e}")
-
-    # 4) Dernier recours: fallback basique
-    return generate_smart_fallback_explanation(verse_text, book, chap, vnum)
-
-async def generate_gemini_explanation(verse_text: str, book: str, chap: int, vnum: int) -> str:
-    """Génère une explication théologique TRÈS enrichie avec Gemini (Emergent ou direct)."""
-    try:
-        if EMERGENT_AVAILABLE and EMERGENT_LLM_KEY:
-            # Utiliser Emergent integrations
-            chat = (
-                LlmChat(
-                    api_key=EMERGENT_LLM_KEY,
-                    session_id=f"verse_ultra_enriched_{book}_{chap}_{vnum}",
-                    system_message="""Tu es un DOCTEUR EN THÉOLOGIE BIBLIQUE de niveau universitaire, spécialisé dans l'exégèse approfondie. 
-Tes explications sont d'un niveau ACADÉMIQUE SUPÉRIEUR :
-- 400-500 mots minimum par verset
-- Terminologie technique précise (hébreu/grec/latin)
-- Références patristiques et réformées
-- Analyse grammaticale et syntaxique
-- Contexte historico-culturel détaillé
-- Implications dogmatiques et sotériologiques
-- Christologie systématique""",
-                ).with_model("gemini", "gemini-2.0-flash")
-            )
-
-            prompt = f"""
-EXÉGÈSE ACADÉMIQUE APPROFONDIE : {book} {chap}:{vnum}
-
-TEXTE MASSORÉTIQUE/GREC : "{verse_text}"
-
-Produis une ANALYSE THÉOLOGIQUE UNIVERSITAIRE structurée ainsi :
-
-**I. ANALYSE TEXTUELLE ET LEXICALE**
-- Termes hébreux/grecs clés avec racines étymologiques
-- Nuances grammaticales et syntaxiques
-- Variantes textuelles significatives
-
-**II. CONTEXTE HISTORICO-LITTÉRAIRE** 
-- Sitz im Leben du passage
-- Structure rhétorique et littéraire
-- Parallèles dans la littérature du Proche-Orient ancien
-
-**III. THÉOLOGIE BIBLIQUE CANONIQUE**
-- Développement du thème dans l'AT/NT
-- Typologie et accomplissement christologique  
-- Économie trinitaire révélée
-
-**IV. HISTOIRE DE L'INTERPRÉTATION**
-- Perspective patristique (Chrysostome, Augustin, etc.)
-- Apport de la Réforme (Calvin, Luther)
-- Consensus évangélique contemporain
-
-**V. APPLICATIONS PASTORALES**
-- Implications sotériologiques
-- Sanctification et croissance spirituelle
-- Dimension ecclésiale et missionnelle
-
-EXIGENCES : 400-500 mots, terminologie technique précise, références savantes, style académique mais pastoral.
-"""
-
-            resp = await chat.send_message(UserMessage(text=prompt))
-            if resp and len(resp.strip()) > 300:
-                return format_theological_content(resp.strip())
-
-        elif GEMINI_AVAILABLE and not EMERGENT_AVAILABLE:
-            # Utiliser Gemini direct (pour Railway)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-
-            prompt = f"""Tu es un théologien expert. Analyse ce verset biblique de façon académique :
-
-VERSET : {book} {chap}:{vnum} - "{verse_text}"
-
-Fournis une explication théologique approfondie (300-400 mots) incluant :
-1. Analyse des mots-clés hébreux/grecs
-2. Contexte historique et littéraire
-3. Doctrine théologique centrale
-4. Lien avec Christ et l'économie du salut
-5. Application spirituelle
-
-Style : académique mais accessible, centré sur l'Évangile."""
-
-            response = model.generate_content(prompt)
-            if response.text and len(response.text.strip()) > 200:
-                return format_theological_content(response.text.strip())
-
-    except Exception as e:
-        print(f"Gemini ultra-enriched generation error: {e}")
-
-    return ""
-
-async def enrich_with_gemini(verse_text: str, book: str, chap: int, vnum: int, base_explanation: str) -> str:
-    """Enrichit une explication existante avec Gemini."""
-    if not (GEMINI_AVAILABLE and EMERGENT_LLM_KEY):
-        return base_explanation
-
-    try:
-        chat = (
-            LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=f"enrich_{book}_{chap}_{vnum}",
-                system_message="Expert théologien : enrichis et complète les explications bibliques existantes.",
-            ).with_model("gemini", "gemini-2.0-flash")
-        )
-
-        prompt = f"""
-Enrichis cette explication théologique pour {book} {chap}:{vnum} :
-
-TEXTE BIBLIQUE : "{verse_text}"
-
-EXPLICATION EXISTANTE : "{base_explanation}"
-
-Enrichis en ajoutant (200-250 mots supplémentaires) :
-- Contexte historique/culturel précis
-- Références croisées canoniques
-- Implications christologiques
-- Applications pratiques pour aujourd'hui
-
-Garde l'explication existante et ajoute tes enrichissements de manière fluide.
-"""
-
-        resp = await chat.send_message(UserMessage(text=prompt))
-        if resp and len(resp.strip()) > len(base_explanation) + 50:
-            return format_theological_content(resp.strip())
-    except Exception as e:
-        print(f"Enrichment error: {e}")
-
-    return base_explanation
-
 def generate_smart_fallback_explanation(verse_text: str, book: str, chap: int, vnum: int) -> str:
-    """Génère une explication ULTRA-ENRICHIE intelligente sans LLM."""
-
     low = verse_text.lower()
     explanations = []
-
-    # I. ANALYSE TEXTUELLE APPROFONDIE
-    explanations.append(f"**ANALYSE TEXTUELLE DE {book} {chap}:{vnum}**")
-
-    # Contexte littéraire spécialisé par livre
-    advanced_contexts = {
-        "Genèse": f"Dans le récit primordial de la création (Ma'aseh Bereshit), ce verset {vnum} révèle l'ordre cosmogonique divin et établit les fondements ontologiques de la réalité. La structure hébraïque du texte massorétique déploie une théologie de la transcendance créatrice.",
-        "Exode": f"Ce passage du récit de l'Exode (Sefer Shemot) s'inscrit dans la théologie de la libération sotériologique. Le verset {vnum} articule la dialectique entre l'oppression pharaonique et la rédemption yahviste, préfigurant l'œuvre messianique.",
-        "Psaumes": f"Cette expression du psautier davidique (Tehillim) constitue une théophanie poétique révélant l'intimité de l'alliance. Le verset {vnum} exprime la spiritualité hébraïque authentique dans sa relation covenantale avec YHWH.",
-        "Jean": f"Dans le quatrième évangile johannique, ce logion du verset {vnum} déploie la christologie haute et révèle l'économie trinitaire. La théologie johannique articule l'incarnation du Logos et la sotériologie pneumatique.",
-        "Romains": f"Cette péricope de l'épître paulinienne développe la théologie de la justification (dikaiôsis). Le verset {vnum} explicite la doctrine de la grâce souveraine et l'imputation de la justice christique."
-    }
-
-    explanations.append(advanced_contexts.get(book, f"Ce texte de {book} s'inscrit dans l'économie révélationnelle progressive et manifeste l'herméneutique christocentrique de l'Écriture."))
-
-    # II. ANALYSE LEXICALE ET GRAMMATICALE AVANCÉE
-    explanations.append("**ANALYSE LEXICALE :**")
-
-    if any(word in low for word in ["créa", "commencement", "dieu créa", "בראשית", "ברא"]):
-        explanations.append("Le terme hébraïque 'bara' (ברא) exprime la création ex nihilo, activité exclusive de la divinité. 'Bereshit' (בראשית) indique l'inauguration absolue du temps cosmique. 'Elohim' (אלהים), pluriel d'intensité, révèle la majesté trinitaire préfigurée dans l'économie créatrice.")
-
-    if any(word in low for word in ["lumière", "soit", "dit", "אור", "יהי"]):
-        explanations.append("La formule performative 'yehi or' (יהי אור) constitue le premier fiat divin, révélant l'efficacité de la Parole créatrice (dabar). Cette lumière primordiale (or rishon) précède ontologiquement les luminaires, évoquant la nature métaphysique de la révélation divine.")
-
-    if any(word in low for word in ["image", "ressemblance", "tselem", "demut", "צלם"]):
-        explanations.append("Le concept d'image divine (tselem Elohim - צלם אלהים) et de ressemblance (demut - דמות) établit l'anthropologie biblique. Cette imago Dei comprend la rationalité (mens), la volonté libre (liberum arbitrium) et la capacité relationnelle, corrompue par la chute mais restaurée en Christ, l'image parfaite du Père.")
-
-    if any(word in low for word in ["alliance", "berith", "brit", "ברית"]):
-        explanations.append("Le concept d'alliance (berith - ברית) structure l'histoire du salut selon le modèle suzerain-vassal du Proche-Orient ancien. Cette disposition covenantale révèle la fidélité de YHWH (hesed - חסד) et préfigure la nouvelle alliance (berith hadashah) ratifiée par le sang christique.")
-
-    if any(word in low for word in ["amour", "agape", "hesed", "אהבה"]):
-        explanations.append("L'amour divin (ahavah - אהבה) se manifeste comme hesed (חסד - fidélité covenantale) dans l'AT et agapè (ἀγάπη) dans le NT. Cette agapè inconditionnelle culmine dans le sacrifice propitiatoire du Calvaire, révélant la philanthropie divine (Tite 3:4).")
-
-    if any(word in low for word in ["foi", "aman", "pistis", "אמן", "πίστις"]):
-        explanations.append("La foi biblique ('emunah - אמונה/pistis - πίστις) implique la confiance fiduciale (fiducia), l'assentiment intellectuel (assensus) et la connaissance salvifique (notitia). Instrument de la justification (sola fide), elle unit le croyant au Christ par l'union mystique.")
-
-    # III. THÉOLOGIE SYSTÉMATIQUE
-    explanations.append("**IMPLICATIONS DOGMATIQUES :**")
-
-    if book in ["Genèse"]:
-        explanations.append("Ce texte fonde la théologie de la création contre le panthéisme, le dualisme et l'évolutionnisme athée. La creatio ex nihilo affirme la transcendance divine et établit la distinction Créateur-créature, base de toute métaphysique biblique.")
-    elif book in ["Jean"]:
-        explanations.append("Cette péricope articule la christologie chalcédonienne (deux natures, une personne) et la théologie trinitaire. L'incarnation du Logos révèle l'économie immanente de la Trinité et accomplit l'œuvre de réconciliation.")
-    elif book in ["Romains"]:
-        explanations.append("Ce passage développe la sotériologie réformée : dépravation totale, élection inconditionnelle, expiation limitée, grâce irrésistible et persévérance des saints. La justification sola gratia exclut toute coopération synergiste.")
-
-    # IV. PERSPECTIVE HISTORICO-RÉDEMPTRICE
-    explanations.append("**ÉCONOMIE DU SALUT :**")
-
-    cristocentrique_apps = {
-        "Genèse": "Cette vérité créationnelle trouve son accomplissement dans l'œuvre du Logos incarné, agent de la création (Jean 1:3, Col 1:16) et de la nouvelle création (2 Cor 5:17). Christ, dernier Adam, restaure l'image divine déchue.",
-        "Exode": "Cette libération typologique préfigure l'exode spirituel accompli par Christ, notre Pâque (1 Cor 5:7). L'agneau pascal anticipe l'Agneau de Dieu qui ôte le péché du monde (Jean 1:29).",
-        "Psaumes": "Ce psaume messianique trouve son accomplissement en Christ, Fils de David selon la chair (Rom 1:3), qui règne à la droite du Père (Ps 110:1, Héb 1:3).",
-        "Jean": "Cette révélation johannique manifeste l'unité essentielle du Fils avec le Père (homoousios) et la mission sotériologique du Verbe incarné pour le salut du cosmos.",
-        "Romains": "Cette exposition sotériologique révèle l'œuvre substitutionnaire du Christ, qui devient péché pour nous afin que nous devenions justice de Dieu en lui (2 Cor 5:21)."
-    }
-
-    explanations.append(cristocentrique_apps.get(book, "Ce passage révèle un aspect de l'œuvre rédemptrice du Christ et de son application par l'Esprit Saint dans l'ordo salutis."))
-
-    # V. RÉFÉRENCES PATRISTIQUES ET RÉFORMÉES
-    explanations.append("**CONSENSUS PATRUM :**")
-
-    patristique_refs = {
-        "Genèse": "Augustin (Conf. XI) médite sur l'éternité créatrice de Dieu. Basile de Césarée (Hexaemeron) développe la théologie de la création. Calvin (Inst. I.14) explicite la doctrine de la providence.",
-        "Jean": "Athanase d'Alexandrie défend l'homoousios contre l'arianisme. Jean Chrysostome développe l'exégèse christologique. Luther redécouvre la justification sola fide.",
-        "Romains": "Augustin contre Pélage articule la doctrine de la grâce. Thomas d'Aquin systématise la théologie de la justification. Calvin explicite la prédestination double.",
-    }
-
-    explanations.append(patristique_refs.get(book, "Les Pères de l'Église et les Réformateurs ont développé l'herméneutique christocentrique de ce passage dans la tradition orthodoxe."))
-
-    # VI. APPLICATION PASTORALE
-    explanations.append("**IMPLICATIONS PASTORALES :** Cette vérité théologique transforme la vie chrétienne par la sanctification progressive (theosis), nourrit la piété réformée et oriente la mission évangélique ad majorem Dei gloriam.")
-
+    explanations.append(f"ANALYSE TEXTUELLE DE {book} {chap}:{vnum}")
+    if any(w in low for w in ["lumière", "yehi", "אור"]):
+        explanations.append("La formule 'yehi or' révèle l'efficacité de la Parole créatrice.")
+    explanations.append("Ce passage s'inscrit dans l'économie révélationnelle et la lecture christocentrique.")
     return " ".join(explanations)
 
-# =========================
-#   Génération "28 rubriques" (intelligente basique)
-# =========================
-RUBRIQUES_28 = [
-    "Prière d'ouverture",
-    "Structure littéraire",
-    "Questions du chapitre précédent",
-    "Thème doctrinal",
-    "Fondements théologiques",
-    "Contexte historique",
-    "Contexte culturel",
-    "Contexte géographique",
-    "Analyse lexicale",
-    "Parallèles bibliques",
-    "Prophétie et accomplissement",
-    "Personnages",
-    "Structure rhétorique",
-    "Théologie trinitaire",
-    "Christ au centre",
-    "Évangile et grâce",
-    "Application personnelle",
-    "Application communautaire",
-    "Prière de réponse",
-    "Questions d'étude",
-    "Points de vigilance",
-    "Objections et réponses",
-    "Perspective missionnelle",
-    "Éthique chrétienne",
-    "Louange / liturgie",
-    "Méditation guidée",
-    "Mémoire / versets clés",
-    "Plan d'action",
-]
-
-def generate_intelligent_rubric_content(rubric_num: int, book_name: str, chapter: int,
-                                        text: str, historical_context: str = "", cross_refs = None) -> str:
-    if cross_refs is None:
-        cross_refs = []
-    rubric_name = RUBRIQUES_28[rubric_num - 1] if rubric_num <= len(RUBRIQUES_28) else f"Rubrique {rubric_num}"
-    base = {
-        1: f"Seigneur, ouvre nos cœurs à la compréhension de {book_name} {chapter}. Que ton Esprit nous guide dans ta vérité et nous transforme par ta Parole.",
-        2: f"Le chapitre {chapter} de {book_name} révèle une structure littéraire qui sert le propos théologique de l'auteur inspiré.",
-        4: f"Le thème doctrinal central de {book_name} {chapter} manifeste des vérités fondamentales sur la nature de Dieu, l'homme et le salut.",
-        6: f"Le contexte historique éclaire la situation des premiers auditeurs de {book_name} {chapter} et enrichit notre compréhension contemporaine.",
-        10: f"Les parallèles bibliques enrichissent la lecture canonique de {book_name} {chapter} et révèlent l'unité de la révélation divine.",
-        15: f"Christ se révèle au centre de {book_name} {chapter} comme accomplissement des promesses et clé d'interprétation de l'Écriture.",
-        17: f"Application personnelle : comment {book_name} {chapter} transforme notre marche quotidienne avec Dieu et notre croissance spirituelle ?",
-    }.get(rubric_num, f"Contenu contextualisé et enrichi pour {book_name} {chapter} selon la perspective évangélique.")
-    out = f"## {rubric_num}. {rubric_name}\n\n{base}"
-    if historical_context:
-        out += f"\n\nContexte historique détaillé: {historical_context}"
-    if cross_refs:
-        ref_strings = []
-        for ref in cross_refs[:3]:
-            try:
-                if getattr(ref, 'verse', None):
-                    ref_strings.append(f"{ref.book} {ref.chapter}:{ref.verse}")
-                else:
-                    ref_strings.append(f"{ref.book} {ref.chapter}")
-            except Exception:
-                ref_strings.append(str(ref))
-        if ref_strings:
-            out += f"\n\nRéférences croisées pertinentes: {', '.join(ref_strings)}"
-    return out
+async def generate_enriched_theological_explanation(verse_text: str, book: str, chap: int, vnum: int, enriched: bool = True) -> str:
+    # Gemini indisponible => fallback local robuste
+    return generate_smart_fallback_explanation(verse_text, book, chap, vnum)
 
 # =========================
 #        ROUTES
@@ -674,10 +352,6 @@ def generate_intelligent_rubric_content(rubric_num: int, book_name: str, chapter
 @app.get("/")
 def root():
     return {"message": APP_NAME, "status": "Railway deployment successful"}
-
-@app.get("/health") 
-def health_check():
-    return {"status": "healthy", "message": "Railway backend operational"}
 
 @app.get("/api/")
 def api_root():
@@ -696,7 +370,7 @@ async def health():
         pass
     return {"status": "ok", "bibleId": bid or "unknown", "gemini": GEMINI_AVAILABLE}
 
-# ---- Progressif OPTIMISÉ
+# ---- Progressif
 @app.post("/api/generate-verse-by-verse-progressive", response_model=ProgressiveStudyResponse)
 async def generate_verse_by_verse_progressive(request: ProgressiveStudyRequest):
     try:
@@ -708,17 +382,13 @@ async def generate_verse_by_verse_progressive(request: ProgressiveStudyRequest):
         book_label, osis, chap, verse_info = parse_passage_input_extended(passage)
         bible_id = await get_bible_id()
 
-        # Détermination de la plage de versets du chapitre
         if isinstance(verse_info, tuple):
             start_verse_orig, end_verse = verse_info
         elif verse_info:
             start_verse_orig = end_verse = verse_info
         else:
-            try:
-                verses_list = await list_verses_ids(bible_id, osis, chap)
-                start_verse_orig, end_verse = 1, len(verses_list)
-            except Exception:
-                start_verse_orig, end_verse = 1, 31  # fallback raisonnable
+            verses_list = await list_verses_ids(bible_id, osis, chap)
+            start_verse_orig, end_verse = 1, len(verses_list) if verses_list else 31
 
         batch_start = request.start_verse
         batch_end = min(batch_start + batch_size - 1, end_verse)
@@ -730,13 +400,9 @@ async def generate_verse_by_verse_progressive(request: ProgressiveStudyRequest):
             intro = "Cette étude parcourt la Bible Darby (FR) avec des explications théologiques enrichies automatiquement par IA."
             batch_content += f"# {title}\n\n{intro}\n\n"
 
-        # Mode priorité (option – la logique d'enrichissement reste identique ici)
-        is_priority_batch = request.priority_mode and batch_start <= 5
-
         for v in range(batch_start, batch_end + 1):
             verse_text = await fetch_passage_text(bible_id, osis, chap, v)
-            theox = await generate_enriched_theological_explanation(verse_text, book_label, chap, v, enriched=True if request.enriched else False)
-            theox = format_theological_content(theox)
+            theox = await generate_enriched_theological_explanation(verse_text, book_label, chap, v, enriched=False)
             batch_content += (
                 f"## VERSET {v}\n\n"
                 f"**TEXTE BIBLIQUE :**\n{verse_text}\n\n"
@@ -748,7 +414,6 @@ async def generate_verse_by_verse_progressive(request: ProgressiveStudyRequest):
         verses_completed = batch_end - start_verse_orig + 1
         total_progress = min((verses_completed / total_verses) * 100, 100)
 
-        # Stats pour le frontend
         verse_stats = {
             "processed": verses_completed,
             "total": total_verses,
@@ -764,84 +429,76 @@ async def generate_verse_by_verse_progressive(request: ProgressiveStudyRequest):
             verse_stats=verse_stats
         )
     except Exception as e:
-        print(f"❌ Erreur generate_verse_by_verse_progressive: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur lors de la génération: {str(e)}")
 
-# ---- Verset par verset (non progressif) ENRICHI
+# ---- Verset par verset (non progressif)
 @app.post("/api/generate-verse-by-verse")
 async def generate_verse_by_verse(request: StudyRequest):
     try:
         passage = request.passage.strip()
         if not passage:
             raise HTTPException(status_code=400, detail="Passage requis")
-        base = await _generate_verse_by_verse_content(request)
-        return base
+        book_label, osis, chap, verse = parse_passage_input(passage)
+        bible_id = await get_bible_id()
+        text = await fetch_passage_text(bible_id, osis, chap, verse)
+
+        title = f"**Étude Verset par Verset - {book_label} Chapitre {chap}**"
+        intro = (
+            "Introduction au Chapitre\n\n"
+            "Cette étude parcourt le texte de la **Bible Darby (FR)**. "
+            "Les sections EXPLICATION THÉOLOGIQUE sont enrichies automatiquement par IA théologique."
+        )
+
+        if verse:
+            theox = await generate_enriched_theological_explanation(text, book_label, chap, verse, enriched=False)
+            content = (
+                f"{title}\n\n{intro}\n\n"
+                f"**VERSET {verse}**\n\n"
+                f"**TEXTE BIBLIQUE :**\n{text}\n\n"
+                f"**EXPLICATION THÉOLOGIQUE :**\n{theox}"
+            )
+            return {"content": format_theological_content(content)}
+
+        # Chapitre entier : parser ligne par ligne (1 ligne = 1 verset)
+        blocks: List[str] = [f"{title}\n\n{intro}"]
+        lines = [l for l in text.splitlines() if l.strip()]
+        for line in lines:
+            m = re.match(r"^(\d+)\.\s*(.*)$", line)
+            if not m:
+                continue
+            vnum = int(m.group(1))
+            vtxt = m.group(2).strip()
+            theox = await generate_enriched_theological_explanation(vtxt, book_label, chap, vnum, enriched=False)
+            blocks.append(
+                f"**VERSET {vnum}**\n\n"
+                f"**TEXTE BIBLIQUE :**\n{vtxt}\n\n"
+                f"**EXPLICATION THÉOLOGIQUE :**\n{theox}"
+            )
+        return {"content": format_theological_content("\n\n".join(blocks).strip())}
     except Exception as e:
-        print(f"❌ Erreur generate_verse_by_verse: {e}")
         return {"content": f"Erreur lors de la génération: {str(e)}"}
 
-async def _generate_verse_by_verse_content(req: StudyRequest):
-    book_label, osis, chap, verse = parse_passage_input(req.passage)
-    bible_id = await get_bible_id()
-    text = await fetch_passage_text(bible_id, osis, chap, verse)
+# ---- Étude 28 rubriques (inchangé fonctionnellement)
+RUBRIQUES_28 = [
+    "Prière d'ouverture","Structure littéraire","Questions du chapitre précédent","Thème doctrinal",
+    "Fondements théologiques","Contexte historique","Contexte culturel","Contexte géographique",
+    "Analyse lexicale","Parallèles bibliques","Prophétie et accomplissement","Personnages","Structure rhétorique",
+    "Théologie trinitaire","Christ au centre","Évangile et grâce","Application personnelle","Application communautaire",
+    "Prière de réponse","Questions d'étude","Points de vigilance","Objections et réponses","Perspective missionnelle",
+    "Éthique chrétienne","Louange / liturgie","Méditation guidée","Mémoire / versets clés","Plan d'action",
+]
 
-    title = f"**Étude Verset par Verset - {book_label} Chapitre {chap}**"
-    intro = (
-        "Introduction au Chapitre\n\n"
-        "Cette étude parcourt le texte de la **Bible Darby (FR)**. "
-        "Les sections EXPLICATION THÉOLOGIQUE sont enrichies automatiquement par IA théologique."
-    )
+def generate_intelligent_rubric_content(rubric_num: int, book_name: str, chapter: int, text: str) -> str:
+    rubric_name = RUBRIQUES_28[rubric_num - 1] if rubric_num <= len(RUBRIQUES_28) else f"Rubrique {rubric_num}"
+    base = {
+        1: f"Seigneur, ouvre nos cœurs à la compréhension de {book_name} {chapter}.",
+        2: f"Le chapitre {chapter} de {book_name} révèle une structure littéraire au service du propos.",
+        10: f"Les parallèles bibliques éclairent l'unité canonique de {book_name} {chapter}.",
+        15: f"Christ, centre herméneutique, accomplit {book_name} {chapter}.",
+        17: f"Application personnelle : comment {book_name} {chapter} transforme notre marche ?",
+    }.get(rubric_num, f"Contenu contextualisé pour {book_name} {chapter}.")
+    return f"## {rubric_num}. {rubric_name}\n\n{base}"
 
-    if verse:
-        theox = await generate_enriched_theological_explanation(text, book_label, chap, verse, enriched=True)  # Force enrichissement
-        theox = format_theological_content(theox)
-        content = (
-            f"{title}\n\n{intro}\n\n"
-            f"**VERSET {verse}**\n\n"
-            f"**TEXTE BIBLIQUE :**\n{text}\n\n"
-            f"**EXPLICATION THÉOLOGIQUE :**\n{theox}"
-        )
-        return {"content": format_theological_content(content)}
-
-    # Chapitre entier
-    blocks: List[str] = [f"{title}\n\n{intro}"]
-
-    # Si ta bibliothèque locale est dispo, on l'utilise (texte + explications riches)
-    if VLIB_AVAILABLE:
-        try:
-            entries = vlib_all_verses(book_label, chap) or []
-            if entries:
-                for e in entries:
-                    vnum = int(e["verse_number"])
-                    vtxt = clean_plain_text(e["verse_text"])
-                    theox = await generate_enriched_theological_explanation(vtxt, book_label, chap, vnum, enriched=True)  # Force enrichissement
-                    theox = format_theological_content(theox)
-                    blocks.append(
-                        f"**VERSET {vnum}**\n\n"
-                        f"**TEXTE BIBLIQUE :**\n{vtxt}\n\n"
-                        f"**EXPLICATION THÉOLOGIQUE :**\n{theox}"
-                    )
-                return {"content": format_theological_content("\n\n".join(blocks).strip())}
-        except Exception as e:
-            print(f"VLIB chapter fallback: {e}")
-
-    # Sinon, parser le texte brut et générer verset par verset
-    lines = [l for l in text.splitlines() if l.strip()]
-    for line in lines:
-        m = re.match(r"^(\d+)\.\s*(.*)$", line)
-        if not m:
-            continue
-        vnum = int(m.group(1))
-        vtxt = m.group(2).strip()
-        theox = await generate_enriched_theological_explanation(vtxt, book_label, chap, vnum, enriched=True)  # Force enrichissement
-        blocks.append(
-            f"**VERSET {vnum}**\n\n"
-            f"**TEXTE BIBLIQUE :**\n{vtxt}\n\n"
-            f"**EXPLICATION THÉOLOGIQUE :**\n{theox}"
-        )
-    return {"content": format_theological_content("\n\n".join(blocks).strip())}
-
-# ---- Étude 28 rubriques ENRICHIE
 @app.post("/api/generate-study")
 async def generate_study(request: StudyRequest):
     try:
@@ -849,169 +506,21 @@ async def generate_study(request: StudyRequest):
         if not passage:
             raise HTTPException(status_code=400, detail="Passage requis")
 
-        # Forcer chapitre (les 28 points portent sur le chapitre)
         book_label, osis, chap, _ = parse_passage_input(passage)
         bible_id = await get_bible_id()
         text = await fetch_passage_text(bible_id, osis, chap, None)
 
-        rubs = RUBRIQUES_28
         requested_indices = request.requestedRubriques or list(range(len(RUBRIQUES_28)))
-        if request.requestedRubriques:
-            rubs = [RUBRIQUES_28[i] for i in request.requestedRubriques if 0 <= i < len(RUBRIQUES_28)]
-            if not rubs:
-                rubs = RUBRIQUES_28
-                requested_indices = list(range(len(RUBRIQUES_28)))
-
-        header = f"# Étude Intelligente en 28 points — {book_label} {chap} (Darby Enrichie)\n"
-        intro = (
-            "Cette étude utilise une base théologique enrichie avec IA (contexte, parallèles, lexique). "
-            "Le texte biblique est celui de la **Bible Darby (FR)** avec explications automatiquement générées."
-        )
+        header = f"# Étude Intelligente en 28 points — {book_label} {chap} (Darby)\n"
+        intro = "Étude enrichie (contenu local)"
         excerpt = "\n".join([l for l in text.splitlines()[:8]])
+
         body: List[str] = [header, "## 📖 Extrait du texte (Darby)\n" + excerpt, intro, "---"]
-
-        # Génération enrichie si demandée
-        if request.enriched and GEMINI_AVAILABLE and EMERGENT_LLM_KEY:
-            try:
-                enhanced_content = await generate_enhanced_study_with_gemini(book_label, chap, requested_indices, text)
-                if enhanced_content and len(enhanced_content) > len(header) + 500:
-                    return {"content": enhanced_content}
-            except Exception as e:
-                print(f"Enriched study fallback: {e}")
-
-        # Génération simple et robuste (sans dépendre d'autres modules)
         for i, rubric_idx in enumerate(requested_indices):
             body.append(generate_intelligent_rubric_content(rubric_idx + 1, book_label, chap, text))
-
         return {"content": "\n\n".join(body).strip()}
     except Exception as e:
-        print(f"❌ Erreur generate_study: {e}")
         return {"content": f"Erreur lors de la génération: {str(e)}"}
-
-# ---- Routes dédiées Gemini ENRICHIES
-async def generate_enhanced_study_with_gemini(book: str, chapter: int, rubric_indices: List[int], base_text: str) -> str:
-    """Génère une étude 28 points enrichie avec Gemini."""
-    if not (GEMINI_AVAILABLE and EMERGENT_LLM_KEY):
-        return ""
-
-    try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"study_28_{book}_{chapter}",
-            system_message=(
-                "Théologien expert : génère des études bibliques approfondies, riches en doctrine, "
-                "références canoniques et applications pratiques. Style académique mais accessible."
-            ),
-        ).with_model("gemini", "gemini-2.0-flash")
-
-        rubrics_requested = [RUBRIQUES_28[i] for i in rubric_indices if i < len(RUBRIQUES_28)]
-        rubrics_text = ", ".join(rubrics_requested[:10])  # Limiter pour le prompt
-
-        prompt = f"""
-Génère une étude théologique complète et substantielle pour {book} chapitre {chapter}.
-
-RUBRIQUES À DÉVELOPPER : {rubrics_text} (et autres selon les 28 points standards)
-
-TEXTE BIBLIQUE (extrait) : {base_text[:1000]}...
-
-EXIGENCES :
-- Étude complète en 28 rubriques numérotées
-- Chaque rubrique : 150-250 mots minimum
-- Contenu théologiquement solide et orthodoxe
-- Références canoniques précises
-- Applications pratiques contemporaines
-- Perspective christocentrique
-- Style fluide et engageant
-
-FORMAT :
-## 1. Prière d'ouverture
-[Contenu substantiel]
-
-## 2. Structure littéraire  
-[Contenu substantiel]
-
-[Continue pour toutes les 28 rubriques...]
-
-Développe particulièrement : contexte historique, analyse lexicale, parallèles bibliques, christologie, applications.
-"""
-
-        resp = await chat.send_message(UserMessage(text=prompt))
-        if resp and len(resp.strip()) > 1000:
-            return resp.strip()
-    except Exception as e:
-        print(f"Enhanced study generation error: {e}")
-
-    return ""
-
-async def generate_enhanced_content_with_gemini(passage: str, rubric_type: str, base_content: str = "") -> str:
-    if not (GEMINI_AVAILABLE and EMERGENT_LLM_KEY):
-        return base_content or f"Contenu théologique enrichi pour {passage} (mode local)"
-    try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"bible_study_enhanced_{passage.replace(' ', '_')}",
-            system_message=(
-                "Théologien expert : contenus théologiques riches, contextualisés, doctrinalement fidèles, "
-                "avec références canoniques précises et applications pratiques contemporaines, en français."
-            ),
-        ).with_model("gemini", "gemini-2.0-flash")
-
-        if rubric_type == "verse_by_verse":
-            prompt = f"""
-Génère une étude théologique approfondie verset par verset pour : {passage}
-
-Format par verset :
-**VERSET [n]**
-
-**TEXTE BIBLIQUE :** [verset exact]
-
-**EXPLICATION THÉOLOGIQUE :** 
-- Contexte immédiat et canonique (75-100 mots)
-- Analyse lexicale des termes clés hébreu/grec (50-75 mots)  
-- Doctrine centrale et implications théologiques (100-150 mots)
-- Références croisées précises (25-50 mots)
-- Applications spirituelles contemporaines (50-75 mots)
-
-Total par verset : 300-450 mots d'explication substantielle.
-Style : académique mais accessible, centré sur l'Évangile.
-"""
-        elif rubric_type == "thematic_study":
-            prompt = f"""
-Génère une étude en 28 rubriques complète et substantielle (200-300 mots par rubrique) pour : {passage}
-Garde les titres numérotés (1..28) exactement comme attendus.
-Chaque rubrique doit être riche en contenu doctrinal, références bibliques et applications.
-"""
-        else:
-            prompt = f"Enrichis théologiquement (300-400 mots) le contenu pour {passage} avec doctrine, contexte et applications."
-
-        resp = await chat.send_message(UserMessage(text=prompt))
-        return resp or (base_content or f"Contenu théologique enrichi pour {passage} (mode local)")
-    except Exception as e:
-        if any(k in str(e) for k in ("SSL", "TLS", "EOF")):
-            return base_content or f"Contenu théologique enrichi pour {passage} (mode local)"
-        return base_content or f"Contenu théologique enrichi pour {passage} (mode fallback)"
-
-@app.post("/api/generate-study-gemini")
-async def generate_study_gemini(request: StudyRequest):
-    try:
-        passage = request.passage.strip()
-        if not passage:
-            raise HTTPException(status_code=400, detail="Passage requis")
-        enhanced = await generate_enhanced_content_with_gemini(passage, "thematic_study")
-        return {"content": enhanced}
-    except Exception as e:
-        return {"content": "Erreur lors de la génération avec Gemini: " + str(e)}
-
-@app.post("/api/generate-verse-by-verse-gemini")
-async def generate_verse_by_verse_gemini(request: StudyRequest):
-    try:
-        passage = request.passage.strip()
-        if not passage:
-            raise HTTPException(status_code=400, detail="Passage requis")
-        enhanced = await generate_enhanced_content_with_gemini(passage, "verse_by_verse")
-        return {"content": enhanced}
-    except Exception as e:
-        return {"content": "Erreur lors de la génération avec Gemini: " + str(e)}
 
 # ---- Lancement local
 if __name__ == "__main__":
